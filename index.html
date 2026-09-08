@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glow360 — 360° Property Tours, Auckland</title>
+<meta name="description" content="Professional 360° virtual property tours for Auckland real estate. Book a session and get a walkthrough buyers can explore from anywhere.">
+
+<meta property="og:title" content="Glow360 — 360° Property Tours, Auckland">
+<meta property="og:description" content="Professional 360° virtual property tours for Auckland real estate.">
+<meta property="og:type" content="website">
+
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Parisienne&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR-GOOGLE-MAPS-API-KEY&libraries=places"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F5EFE2; color: #201D18; font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+  a { color: inherit; }
+  img, svg { display: block; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; }
+  .nav-logo { font-family: 'Parisienne', cursive; font-size: 32px; color: #201D18; text-decoration: none; }
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-links a { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
+  .nav-links a:hover { color: #201D18; }
+  .nav-cta { padding: 10px 22px; background: rgba(255,255,255,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(32,29,24,0.15); border-radius: 30px; color: #201D18 !important; transition: all 0.2s ease; }
+  .nav-cta:hover { background: #201D18; color: #F5EFE2 !important; border-color: #201D18; }
+
+  .hero { padding: 88px 0 100px; text-align: center; }
+  .hero-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #A8824F; margin: 0 0 22px; }
+  .hero h1 { margin: 0 auto 24px; max-width: 720px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 56px; line-height: 1.15; color: #201D18; }
+  .hero p { margin: 0 auto 40px; max-width: 460px; font-size: 16px; line-height: 1.7; color: rgba(32,29,24,0.6); }
+  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary, .btn-secondary { display: inline-flex; align-items: center; gap: 8px; padding: 14px 28px; border-radius: 30px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none; transition: all 0.25s ease; border: 1px solid transparent; }
+  .btn-primary { background: #201D18; color: #F5EFE2; }
+  .btn-primary:hover { background: #A8824F; transform: translateY(-1px); }
+  .btn-secondary { background: rgba(255,255,255,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-color: rgba(32,29,24,0.15); color: #201D18; }
+  .btn-secondary:hover { border-color: #A8824F; color: #A8824F; }
+
+  .tour-embed { margin: 56px auto 0; max-width: 900px; border-radius: 18px; overflow: hidden; border: 1px solid rgba(32,29,24,0.12); box-shadow: 0 30px 60px rgba(90,70,40,0.15); aspect-ratio: 16 / 9; background: #000; }
+  .tour-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+  .triad { padding: 56px 0 72px; border-top: 1px solid rgba(32,29,24,0.08); display: flex; justify-content: center; align-items: center; gap: 28px; flex-wrap: wrap; text-align: center; }
+  .triad-item { max-width: 220px; }
+  .triad-item p { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(32,29,24,0.55); line-height: 1.7; }
+  .triad-glyph { color: #A8824F; font-size: 18px; }
+
+  .value { padding: 0 0 80px; }
+  .value-inner { max-width: 620px; margin: 0 auto; text-align: center; }
+  .value p { font-size: 17px; line-height: 1.85; color: rgba(32,29,24,0.7); margin: 0; }
+  .value strong { color: #201D18; font-weight: 600; }
+
+  .proof { padding: 0 0 88px; }
+  .proof-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; background: rgba(255,255,255,0.55); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(32,29,24,0.1); border-radius: 18px; padding: 40px; box-shadow: 0 20px 40px rgba(90,70,40,0.08); }
+  .proof-card h2 { margin: 0 0 8px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 28px; color: #201D18; }
+  .proof-card p { margin: 0; font-size: 14px; color: rgba(32,29,24,0.55); max-width: 380px; }
+  .proof-link { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: transparent; color: #201D18; border: 1px solid #201D18; border-radius: 30px; text-decoration: none; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; transition: all 0.2s ease; white-space: nowrap; }
+  .proof-link:hover { background: #201D18; color: #F5EFE2; }
+
+  .booking-section { padding: 0 0 100px; }
+  .booking-section-heading { text-align: center; margin-bottom: 40px; }
+  .booking-section-heading h2 { margin: 0 0 10px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 34px; color: #201D18; }
+  .booking-section-heading p { margin: 0; font-size: 14px; color: rgba(32,29,24,0.55); }
+
+  .footer { border-top: 1px solid rgba(32,29,24,0.08); padding: 40px 0; }
+  .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .footer-brand { font-family: 'Parisienne', cursive; font-size: 22px; color: rgba(32,29,24,0.7); }
+  .footer-links { display: flex; align-items: center; gap: 24px; }
+  .footer-links a { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
+  .footer-links a:hover { color: #201D18; }
+  .footer-links svg { width: 15px; height: 15px; }
+  .footer-copy { text-align: center; margin-top: 24px; font-size: 11px; color: rgba(32,29,24,0.4); }
+
+  @media (max-width: 640px) {
+    .hero { padding: 64px 0 72px; } .hero h1 { font-size: 38px; }
+    .nav-links a:not(.nav-cta) { display: none; }
+    .proof-card { flex-direction: column; align-items: flex-start; }
+    .triad { gap: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  .booking-wrapper { max-width: 550px; margin: 0 auto; background: rgba(255,255,255,0.55); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(32,29,24,0.1); border-radius: 18px; padding: 36px; box-shadow: 0 20px 40px rgba(90,70,40,0.1); }
+  .booking-wrapper .form-group { margin-bottom: 20px; display: flex; flex-direction: column; }
+  .form-row { display: flex; gap: 16px; }
+  .half { flex: 1; }
+  .booking-wrapper label { color: rgba(32,29,24,0.65); font-size: 11px; font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .booking-wrapper input, .booking-wrapper select { background: rgba(255,255,255,0.7); border: 1px solid rgba(32,29,24,0.15); border-radius: 8px; padding: 12px 16px; color: #201D18; font-size: 14px; font-family: 'Inter', sans-serif; transition: all 0.2s ease; width: 100%; }
+  .booking-wrapper input:focus, .booking-wrapper select:focus { outline: none; border-color: #A8824F; box-shadow: 0 0 0 3px rgba(168,130,79,0.15); }
+  .booking-wrapper input:disabled, .booking-wrapper select:disabled { background: rgba(32,29,24,0.04); color: rgba(32,29,24,0.3); cursor: not-allowed; }
+  .booking-submit { width: 100%; padding: 15px; background: #201D18; color: #F5EFE2; border: none; border-radius: 30px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: all 0.2s ease; margin-top: 8px; }
+  .booking-submit:hover:not(:disabled) { background: #A8824F; transform: translateY(-1px); }
+  .booking-submit:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .form-message { min-height: 18px; margin: 6px 0 0; font-size: 13px; }
+  .form-message.error { color: #B5533C; }
+  .form-message.info { color: rgba(32,29,24,0.5); }
+  .form-message.success { color: #5C7A5E; }
+  .hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .pac-container { background: #FBF8F1; border: 1px solid rgba(32,29,24,0.12); border-radius: 8px; font-family: 'Inter', sans-serif; }
+  .pac-item { color: rgba(32,29,24,0.75); border-color: rgba(32,29,24,0.06); padding: 8px 12px; }
+  .pac-item:hover { background: rgba(32,29,24,0.04); }
+  .pac-item-query { color: #201D18; }
+  .pac-matched { color: #A8824F; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="nav">
+    <a href="#" class="nav-logo">Glow360</a>
+    <div class="nav-links">
+      <a href="https://tours.glow360.co.nz/">Tours</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#book" class="nav-cta">Book Now</a>
+    </div>
+  </nav>
+</div>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">360° Virtual Property Tours — Auckland</p>
+    <h1>See the property before you've parked outside.</h1>
+    <p>A full walkthrough anyone can explore from their phone, hosted for a year, from a single on-site session.</p>
+    <div class="hero-ctas">
+      <a href="#book" class="btn-primary">Book a Session</a>
+      <a href="https://tours.glow360.co.nz/" class="btn-secondary">View a Live Tour</a>
+    </div>
+
+    <div class="tour-embed">
+      <iframe src="https://tours.glow360.co.nz/client-001-wintergardens/" loading="lazy" allowfullscreen></iframe>
+    </div>
+  </div>
+</section>
+
+<div class="wrap" id="how-it-works">
+  <div class="triad">
+    <div class="triad-item"><span class="triad-glyph">◈</span><p>Professionally Captured<br>in Auckland, New Zealand</p></div>
+    <div class="triad-item"><span class="triad-glyph">◈</span><p>Custom Waypoint Mapping<br>for Every Property</p></div>
+    <div class="triad-item"><span class="triad-glyph">◈</span><p>Hosted for 12 Months,<br>No Extra Setup</p></div>
+  </div>
+</div>
+
+<section class="value">
+  <div class="wrap value-inner">
+    <p>A listing photo shows a room. A Glow360 tour lets a buyer actually walk through the house — down the hallway, into the kitchen, out to the deck — before they've made the trip to see it in person. <strong>Listings with a real walkthrough hold attention longer</strong>, and arrive at an open home with buyers who already know the layout.</p>
+  </div>
+</section>
+
+<section class="proof">
+  <div class="wrap">
+    <div class="proof-card">
+      <div>
+        <h2>See it in action</h2>
+        <p>Browse a real Glow360 tour to see exactly what a buyer walks through.</p>
+      </div>
+      <a href="https://tours.glow360.co.nz/" class="proof-link">View Tours</a>
+    </div>
+  </div>
+</section>
+
+<section class="booking-section" id="book">
+  <div class="wrap">
+    <div class="booking-section-heading">
+      <h2>Book Your Session</h2>
+      <p>Enter your address to see which day your area is serviced.</p>
+    </div>
+
+    <div class="booking-wrapper">
+      <form id="shopify-booking-form" onsubmit="executeDatabaseBooking(event)">
+
+        <div class="form-group">
+          <label for="cust-name">Full Name / Agency Name</label>
+          <input type="text" id="cust-name" required placeholder="e.g. John Smith" maxlength="200">
+        </div>
+
+        <div class="form-group">
+          <label for="cust-email">Email Address</label>
+          <input type="email" id="cust-email" required placeholder="e.g. john@agency.co.nz">
+        </div>
+
+        <div class="form-group hp-field" aria-hidden="true">
+          <label for="cust-company">Company</label>
+          <input type="text" id="cust-company" tabindex="-1" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="prop-address">Property Address (Shoot Location)</label>
+          <input type="text" id="prop-address" required placeholder="Start typing an address..." maxlength="300" autocomplete="off">
+          <p id="zone-message" class="form-message" role="status"></p>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group half">
+            <label for="book-date">Select Date</label>
+            <input type="date" id="book-date" required disabled onchange="onDateChanged()">
+          </div>
+          <div class="form-group half">
+            <label for="book-slot">Available Time Slots</label>
+            <select id="book-slot" required disabled>
+              <option value="" disabled selected>Select a date first...</option>
+              <option value="9:00 am">9:00 AM</option>
+              <option value="11:00 am">11:00 AM</option>
+              <option value="1:00 pm">1:00 PM</option>
+              <option value="3:00 pm">3:00 PM</option>
+            </select>
+          </div>
+        </div>
+
+        <p id="form-message" class="form-message" role="status"></p>
+
+        <button type="submit" id="submit-btn" class="booking-submit">Confirm Booking &amp; Lock Slot</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-row">
+      <div class="footer-brand">Glow360</div>
+      <div class="footer-links">
+        <a href="mailto:info@glow360.co.nz">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"></path><path d="M4 7l8 6 8-6"></path></svg>
+          info@glow360.co.nz
+        </a>
+        <!-- REPLACE THIS HREF WITH YOUR REAL FACEBOOK PAGE URL -->
+        <a href="https://www.facebook.com/YOUR-PAGE-HERE" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 21v-7.5h2.5l.5-3h-3V8.5c0-.9.25-1.5 1.5-1.5H16.5V4.3c-.27-.04-1.2-.13-2.28-.13-2.26 0-3.8 1.38-3.8 3.9V10.5h-2.5v3h2.5V21h3z"></path></svg>
+          Facebook
+        </a>
+      </div>
+    </div>
+    <div class="footer-copy">© 2026 Glow360, Auckland, New Zealand.</div>
+  </div>
+</footer>
+
+<script>
+  const SUPABASE_URL = "https://caaenhofcnxbhiskqrzk.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_0_LFFrnDqpVY-HVD0ZjACg_QV_veOcw";
+  const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const SERVICE_REGION = 'Auckland';
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  let suburbRoutingByName = {};
+  let resolvedAddress = null;
+
+  function normalizeSuburb(name) {
+    return name.toLowerCase().trim().replace(/^mt\s/, 'mount ').replace(/\s+/g, ' ');
+  }
+
+  function showFormMessage(text, type) {
+    const el = document.getElementById('form-message');
+    el.textContent = text || '';
+    el.className = 'form-message' + (type ? ' ' + type : '');
+  }
+
+  function showZoneMessage(text, type) {
+    const el = document.getElementById('zone-message');
+    el.textContent = text || '';
+    el.className = 'form-message' + (type ? ' ' + type : '');
+  }
+
+  function resetDateAndSlot() {
+    const dateInput = document.getElementById('book-date');
+    const slotDropdown = document.getElementById('book-slot');
+    dateInput.value = '';
+    dateInput.disabled = true;
+    slotDropdown.disabled = true;
+    slotDropdown.selectedIndex = 0;
+  }
+
+  async function loadSuburbRouting() {
+    const { data, error } = await _supabase.from('suburb_routing').select('suburb, day_of_week');
+    if (error) { console.error('Could not load suburb routing:', error.message); return; }
+    suburbRoutingByName = {};
+    (data || []).forEach(row => { suburbRoutingByName[row.suburb] = row.day_of_week; });
+  }
+
+  function extractSuburb(place) {
+    if (!place.address_components) return null;
+    const priority = ['sublocality_level_1', 'sublocality', 'locality'];
+    for (const type of priority) {
+      const match = place.address_components.find(c => c.types.includes(type));
+      if (match) return match.long_name;
+    }
+    return null;
+  }
+
+  function isInServiceRegion(place) {
+    const region = place.address_components.find(c => c.types.includes('administrative_area_level_1'));
+    return !!region && region.long_name === SERVICE_REGION;
+  }
+
+  function onPlaceSelected(place) {
+    resolvedAddress = null;
+    resetDateAndSlot();
+
+    if (!place || !place.geometry) {
+      showZoneMessage('Please select an address from the dropdown list.', 'error');
+      return;
+    }
+    if (!isInServiceRegion(place)) {
+      showZoneMessage('Sorry — we currently only service the Greater Auckland area.', 'error');
+      return;
+    }
+
+    const suburb = extractSuburb(place);
+    const normalized = suburb ? normalizeSuburb(suburb) : null;
+    const dayOfWeek = normalized !== null ? suburbRoutingByName[normalized] : undefined;
+
+    if (!suburb || dayOfWeek === undefined) {
+      showZoneMessage("We're currently focused on a small set of Auckland suburbs while we grow — " + (suburb || 'this address') + " isn't on our schedule yet. Email info@glow360.co.nz for a custom quote.", 'error');
+      return;
+    }
+
+    resolvedAddress = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), suburb, normalizedSuburb: normalized, dayOfWeek };
+    showZoneMessage(suburb + ' is serviced on ' + DAY_NAMES[dayOfWeek] + 's.', 'success');
+    document.getElementById('book-date').disabled = false;
+  }
+
+  async function checkSlotAvailability(selectedDate) {
+    const slotDropdown = document.getElementById('book-slot');
+    slotDropdown.disabled = false;
+    Array.from(slotDropdown.options).forEach(opt => {
+      if (opt.value !== "") { opt.disabled = false; opt.text = opt.value.toUpperCase(); }
+    });
+    slotDropdown.selectedIndex = 0;
+
+    const { data: activeBookings, error } = await _supabase.from('available_slots').select('time_slot').eq('appointment_date', selectedDate);
+
+    if (error) {
+      console.error("Calendar Sync Failure:", error.message);
+      showFormMessage('Could not load availability — please try again.', 'error');
+      return;
+    }
+
+    if (activeBookings && activeBookings.length > 0) {
+      activeBookings.forEach(booking => {
+        const takenSlot = booking.time_slot.toLowerCase().trim();
+        Array.from(slotDropdown.options).forEach(opt => {
+          if (opt.value.toLowerCase().trim() === takenSlot) {
+            opt.disabled = true;
+            opt.text = opt.value.toUpperCase() + " (BOOKED OUT)";
+          }
+        });
+      });
+    }
+  }
+
+  function onDateChanged() {
+    const dateInput = document.getElementById('book-date');
+    showFormMessage('', null);
+    if (!resolvedAddress) { dateInput.value = ''; return; }
+
+    const selectedDate = dateInput.value;
+    if (!selectedDate) return;
+
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const weekday = new Date(year, month - 1, day).getDay();
+
+    if (weekday !== resolvedAddress.dayOfWeek) {
+      showFormMessage(resolvedAddress.suburb + ' is only serviced on ' + DAY_NAMES[resolvedAddress.dayOfWeek] + 's. Please pick a ' + DAY_NAMES[resolvedAddress.dayOfWeek] + '.', 'error');
+      dateInput.value = '';
+      document.getElementById('book-slot').disabled = true;
+      return;
+    }
+
+    checkSlotAvailability(selectedDate);
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    const dateInput = document.getElementById('book-date');
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.setAttribute('min', today);
+
+    loadSuburbRouting();
+
+    const addressInput = document.getElementById('prop-address');
+    const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+      componentRestrictions: { country: 'nz' },
+      fields: ['address_components', 'geometry'],
+      types: ['address']
+    });
+    autocomplete.addListener('place_changed', function() {
+      onPlaceSelected(autocomplete.getPlace());
+    });
+
+    addressInput.addEventListener('input', function() {
+      if (resolvedAddress) {
+        resolvedAddress = null;
+        resetDateAndSlot();
+        showZoneMessage('', null);
+      }
+    });
+  });
+
+  async function executeDatabaseBooking(event) {
+    event.preventDefault();
+    if (document.getElementById('cust-company').value.trim() !== '') return;
+
+    if (!resolvedAddress) {
+      showFormMessage('Please select a valid address from the dropdown first.', 'error');
+      return;
+    }
+
+    const timeSlot = document.getElementById('book-slot').value;
+    const appointmentDate = document.getElementById('book-date').value;
+
+    if (!timeSlot) {
+      showFormMessage('Please select a time slot.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.innerText = "Processing Reservation...";
+    showFormMessage('', null);
+
+    const { error } = await _supabase.from('bookings').insert([{
+      client_name: document.getElementById('cust-name').value.trim(),
+      client_email: document.getElementById('cust-email').value.trim(),
+      property_address: document.getElementById('prop-address').value.trim(),
+      appointment_date: appointmentDate,
+      time_slot: timeSlot,
+      package_selected: "$250 Core Session",
+      latitude: resolvedAddress.lat,
+      longitude: resolvedAddress.lng,
+      suburb: resolvedAddress.suburb
+    }]);
+
+    if (error) {
+      btn.disabled = false;
+      btn.innerText = "Confirm Booking & Lock Slot";
+      if (error.code === '23505') {
+        showFormMessage('That slot was just booked by someone else — please choose another time.', 'error');
+        checkSlotAvailability(appointmentDate);
+      } else {
+        showFormMessage('Something went wrong submitting your booking. Please try again.', 'error');
+        console.error("Registration Error:", error.message);
+      }
+      return;
+    }
+
+    alert("Success! Your 360 photography slot is locked into our schedule.");
+    window.location.reload();
+  }
+</script>
+
+</body>
+</html>
