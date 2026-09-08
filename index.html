@@ -10,9 +10,8 @@
 <meta property="og:description" content="Professional 360° virtual property tours for Auckland real estate.">
 <meta property="og:type" content="website">
 
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Parisienne&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Italiana&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://maps.googleapis.com/maps/api/js?key=YOUR-GOOGLE-MAPS-API-KEY&libraries=places"></script>
 
 <style>
   * { box-sizing: border-box; }
@@ -22,7 +21,7 @@
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
   .nav { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; }
-  .nav-logo { font-family: 'Parisienne', cursive; font-size: 32px; color: #201D18; text-decoration: none; }
+  .nav-logo { font-family: 'Italiana', serif; font-size: 26px; letter-spacing: 0.04em; color: #201D18; text-decoration: none; }
   .nav-links { display: flex; gap: 32px; align-items: center; }
   .nav-links a { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
   .nav-links a:hover { color: #201D18; }
@@ -40,7 +39,7 @@
   .btn-secondary { background: rgba(255,255,255,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-color: rgba(32,29,24,0.15); color: #201D18; }
   .btn-secondary:hover { border-color: #A8824F; color: #A8824F; }
 
-  .tour-embed { margin: 56px auto 0; max-width: 900px; border-radius: 18px; overflow: hidden; border: 1px solid rgba(32,29,24,0.12); box-shadow: 0 30px 60px rgba(90,70,40,0.15); aspect-ratio: 16 / 9; background: #000; }
+  .tour-embed { width: 100%; height: 85vh; min-height: 480px; margin-top: 56px; overflow: hidden; background: #000; }
   .tour-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
 
   .triad { padding: 56px 0 72px; border-top: 1px solid rgba(32,29,24,0.08); display: flex; justify-content: center; align-items: center; gap: 28px; flex-wrap: wrap; text-align: center; }
@@ -67,7 +66,7 @@
 
   .footer { border-top: 1px solid rgba(32,29,24,0.08); padding: 40px 0; }
   .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  .footer-brand { font-family: 'Parisienne', cursive; font-size: 22px; color: rgba(32,29,24,0.7); }
+  .footer-brand { font-family: 'Italiana', serif; font-size: 19px; letter-spacing: 0.04em; color: rgba(32,29,24,0.7); }
   .footer-links { display: flex; align-items: center; gap: 24px; }
   .footer-links a { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
   .footer-links a:hover { color: #201D18; }
@@ -79,6 +78,7 @@
     .nav-links a:not(.nav-cta) { display: none; }
     .proof-card { flex-direction: column; align-items: flex-start; }
     .triad { gap: 32px; }
+    .tour-embed { height: 60vh; min-height: 360px; margin-top: 40px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
@@ -98,11 +98,20 @@
   .form-message.info { color: rgba(32,29,24,0.5); }
   .form-message.success { color: #5C7A5E; }
   .hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-  .pac-container { background: #FBF8F1; border: 1px solid rgba(32,29,24,0.12); border-radius: 8px; font-family: 'Inter', sans-serif; }
-  .pac-item { color: rgba(32,29,24,0.75); border-color: rgba(32,29,24,0.06); padding: 8px 12px; }
-  .pac-item:hover { background: rgba(32,29,24,0.04); }
-  .pac-item-query { color: #201D18; }
-  .pac-matched { color: #A8824F; }
+  .field-hint { margin: 6px 0 0; font-size: 11px; color: rgba(32,29,24,0.4); }
+  .field-hint a { color: rgba(32,29,24,0.55); text-decoration: underline; }
+  .address-results {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+    margin-top: 4px; max-height: 220px; overflow-y: auto;
+    background: #FBF8F1; border: 1px solid rgba(32,29,24,0.12); border-radius: 8px;
+    box-shadow: 0 12px 30px rgba(90,70,40,0.15);
+  }
+  .address-result-item {
+    padding: 10px 14px; font-size: 13px; color: rgba(32,29,24,0.8);
+    cursor: pointer; border-bottom: 1px solid rgba(32,29,24,0.06);
+  }
+  .address-result-item:last-child { border-bottom: none; }
+  .address-result-item:hover { background: rgba(32,29,24,0.05); color: #201D18; }
 </style>
 </head>
 <body>
@@ -127,10 +136,10 @@
       <a href="#book" class="btn-primary">Book a Session</a>
       <a href="https://tours.glow360.co.nz/" class="btn-secondary">View a Live Tour</a>
     </div>
+  </div>
 
-    <div class="tour-embed">
-      <iframe src="https://tours.glow360.co.nz/client-001-wintergardens/" loading="lazy" allowfullscreen></iframe>
-    </div>
+  <div class="tour-embed">
+    <iframe src="https://tours.glow360.co.nz/client-001-wintergardens/" loading="lazy" allowfullscreen></iframe>
   </div>
 </section>
 
@@ -185,9 +194,11 @@
           <input type="text" id="cust-company" tabindex="-1" autocomplete="off">
         </div>
 
-        <div class="form-group">
+        <div class="form-group" style="position:relative;">
           <label for="prop-address">Property Address (Shoot Location)</label>
           <input type="text" id="prop-address" required placeholder="Start typing an address..." maxlength="300" autocomplete="off">
+          <div id="address-results" class="address-results"></div>
+          <p class="field-hint">Address search by <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors.</p>
           <p id="zone-message" class="form-message" role="status"></p>
         </div>
 
@@ -279,35 +290,76 @@
     (data || []).forEach(row => { suburbRoutingByName[row.suburb] = row.day_of_week; });
   }
 
-  function extractSuburb(place) {
-    if (!place.address_components) return null;
-    const priority = ['sublocality_level_1', 'sublocality', 'locality'];
-    for (const type of priority) {
-      const match = place.address_components.find(c => c.types.includes(type));
-      if (match) return match.long_name;
+  const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
+  let addressSearchTimer = null;
+
+  function extractSuburbFromAddress(address) {
+    return address.suburb || address.neighbourhood || address.city_district || address.town || address.village || null;
+  }
+
+  function isInServiceRegionFromAddress(address) {
+    const region = (address.state || address.region || '').toLowerCase();
+    return region.includes(SERVICE_REGION.toLowerCase());
+  }
+
+  function hideAddressResults() {
+    const list = document.getElementById('address-results');
+    list.innerHTML = '';
+    list.style.display = 'none';
+  }
+
+  function renderAddressResults(results) {
+    const list = document.getElementById('address-results');
+    list.innerHTML = '';
+    if (!results.length) { list.style.display = 'none'; return; }
+    results.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'address-result-item';
+      item.textContent = r.display_name;
+      item.addEventListener('click', () => onAddressResultSelected(r));
+      list.appendChild(item);
+    });
+    list.style.display = 'block';
+  }
+
+  async function runAddressSearch(query) {
+    try {
+      const url = NOMINATIM_ENDPOINT + '?format=jsonv2&addressdetails=1&countrycodes=nz&limit=5&q=' + encodeURIComponent(query);
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en-NZ' } });
+      const results = await res.json();
+      renderAddressResults(results || []);
+    } catch (err) {
+      console.error('Address lookup failed:', err);
     }
-    return null;
   }
 
-  function isInServiceRegion(place) {
-    const region = place.address_components.find(c => c.types.includes('administrative_area_level_1'));
-    return !!region && region.long_name === SERVICE_REGION;
+  function onAddressInputChanged() {
+    clearTimeout(addressSearchTimer);
+    resolvedAddress = null;
+    resetDateAndSlot();
+    showZoneMessage('', null);
+    const query = document.getElementById('prop-address').value.trim();
+    hideAddressResults();
+    if (query.length < 4) return;
+    // Debounced so we search on a pause in typing, not every keystroke —
+    // both kinder to the free Nominatim service and well within its usage policy.
+    addressSearchTimer = setTimeout(() => runAddressSearch(query), 450);
   }
 
-  function onPlaceSelected(place) {
+  function onAddressResultSelected(result) {
+    document.getElementById('prop-address').value = result.display_name;
+    hideAddressResults();
     resolvedAddress = null;
     resetDateAndSlot();
 
-    if (!place || !place.geometry) {
-      showZoneMessage('Please select an address from the dropdown list.', 'error');
-      return;
-    }
-    if (!isInServiceRegion(place)) {
+    const address = result.address || {};
+
+    if (!isInServiceRegionFromAddress(address)) {
       showZoneMessage('Sorry — we currently only service the Greater Auckland area.', 'error');
       return;
     }
 
-    const suburb = extractSuburb(place);
+    const suburb = extractSuburbFromAddress(address);
     const normalized = suburb ? normalizeSuburb(suburb) : null;
     const dayOfWeek = normalized !== null ? suburbRoutingByName[normalized] : undefined;
 
@@ -316,7 +368,7 @@
       return;
     }
 
-    resolvedAddress = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), suburb, normalizedSuburb: normalized, dayOfWeek };
+    resolvedAddress = { lat: parseFloat(result.lat), lng: parseFloat(result.lon), suburb, normalizedSuburb: normalized, dayOfWeek };
     showZoneMessage(suburb + ' is serviced on ' + DAY_NAMES[dayOfWeek] + 's.', 'success');
     document.getElementById('book-date').disabled = false;
   }
@@ -379,21 +431,11 @@
     loadSuburbRouting();
 
     const addressInput = document.getElementById('prop-address');
-    const autocomplete = new google.maps.places.Autocomplete(addressInput, {
-      componentRestrictions: { country: 'nz' },
-      fields: ['address_components', 'geometry'],
-      types: ['address']
-    });
-    autocomplete.addListener('place_changed', function() {
-      onPlaceSelected(autocomplete.getPlace());
-    });
+    addressInput.addEventListener('input', onAddressInputChanged);
 
-    addressInput.addEventListener('input', function() {
-      if (resolvedAddress) {
-        resolvedAddress = null;
-        resetDateAndSlot();
-        showZoneMessage('', null);
-      }
+    // Close the results dropdown if the user clicks elsewhere on the page.
+    document.addEventListener('click', function(e) {
+      if (e.target !== addressInput) hideAddressResults();
     });
   });
 
