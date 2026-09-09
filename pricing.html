@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pricing — Glow360</title>
+<meta name="description" content="Simple, transparent pricing for Glow360's 360° property tours in Auckland.">
+
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Italiana&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F5EFE2; color: #201D18; font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+  a { color: inherit; }
+  img, svg { display: block; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; }
+  .nav-logo { font-family: 'Italiana', serif; font-size: 26px; letter-spacing: 0.04em; color: #201D18; text-decoration: none; }
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-links a { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
+  .nav-links a:hover { color: #201D18; }
+  .nav-cta { padding: 10px 22px; background: rgba(255,255,255,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(32,29,24,0.15); border-radius: 30px; color: #201D18 !important; transition: all 0.2s ease; }
+  .nav-cta:hover { background: #201D18; color: #F5EFE2 !important; border-color: #201D18; }
+
+  .page-header { padding: 72px 0 56px; text-align: center; }
+  .page-header h1 { margin: 0 0 16px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 48px; color: #201D18; }
+  .page-header p { margin: 0 auto; max-width: 460px; font-size: 16px; line-height: 1.7; color: rgba(32,29,24,0.6); }
+
+  .pricing-grid { padding: 0 0 88px; display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+  .price-card {
+    flex: 1 1 320px; max-width: 380px;
+    background: rgba(255,255,255,0.55); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(32,29,24,0.1); border-radius: 18px; padding: 36px;
+    box-shadow: 0 20px 40px rgba(90,70,40,0.08);
+  }
+  .price-card .amount { font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 42px; color: #201D18; margin: 0; }
+  .price-card .amount span { font-size: 16px; font-style: normal; color: rgba(32,29,24,0.5); }
+  .price-card h3 { margin: 4px 0 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #A8824F; }
+  .price-card p { margin: 0; font-size: 15px; line-height: 1.7; color: rgba(32,29,24,0.7); }
+  .price-card.extension { border-color: rgba(168,130,79,0.3); }
+
+  .cta-row { text-align: center; padding: 0 0 96px; }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 8px; padding: 14px 28px; border-radius: 30px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    text-decoration: none; transition: all 0.25s ease; background: #201D18; color: #F5EFE2;
+  }
+  .btn-primary:hover { background: #A8824F; transform: translateY(-1px); }
+
+  .footer { border-top: 1px solid rgba(32,29,24,0.08); padding: 40px 0; }
+  .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .footer-brand { font-family: 'Italiana', serif; font-size: 19px; letter-spacing: 0.04em; color: rgba(32,29,24,0.7); }
+  .footer-links { display: flex; align-items: center; gap: 24px; }
+  .footer-links a { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
+  .footer-links a:hover { color: #201D18; }
+  .footer-links svg { width: 15px; height: 15px; }
+  .footer-copy { text-align: center; margin-top: 24px; font-size: 11px; color: rgba(32,29,24,0.4); }
+
+  @media (max-width: 640px) {
+    .page-header { padding: 56px 0 40px; } .page-header h1 { font-size: 34px; }
+    .nav-links a:not(.nav-cta) { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="nav">
+    <a href="index.html" class="nav-logo">Glow360</a>
+    <div class="nav-links">
+      <a href="https://tours.glow360.co.nz/">Tours</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="index.html#book" class="nav-cta">Book Now</a>
+    </div>
+  </nav>
+</div>
+
+<section class="page-header">
+  <div class="wrap">
+    <h1>Simple, transparent pricing.</h1>
+    <p>One package covers most properties. Larger homes can add extra coverage on the day.</p>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="pricing-grid">
+    <div class="price-card">
+      <p class="amount">$250 <span>NZD + GST</span></p>
+      <h3>Core Session</h3>
+      <p>An all-inclusive 10-scene tour with custom waypoint mapping, professionally captured on-site and hosted for 12 months. Covers the vast majority of Auckland homes in a single visit.</p>
+    </div>
+    <div class="price-card extension">
+      <p class="amount">$50 <span>NZD + GST</span></p>
+      <h3>Extension Pack</h3>
+      <p>Living in a larger estate? Add 5 extra scenes to your session on the day, so nothing gets left out of the tour — ideal for bigger sections, additional outbuildings, or extensive grounds.</p>
+    </div>
+  </div>
+</div>
+
+<div class="cta-row">
+  <a href="index.html#book" class="btn-primary">Book Your Session</a>
+</div>
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-row">
+      <div class="footer-brand">Glow360</div>
+      <div class="footer-links">
+        <a href="mailto:info@glow360.co.nz">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"></path><path d="M4 7l8 6 8-6"></path></svg>
+          info@glow360.co.nz
+        </a>
+        <!-- REPLACE THIS HREF WITH YOUR REAL FACEBOOK PAGE URL -->
+        <a href="https://www.facebook.com/YOUR-PAGE-HERE" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 21v-7.5h2.5l.5-3h-3V8.5c0-.9.25-1.5 1.5-1.5H16.5V4.3c-.27-.04-1.2-.13-2.28-.13-2.26 0-3.8 1.38-3.8 3.9V10.5h-2.5v3h2.5V21h3z"></path></svg>
+          Facebook
+        </a>
+      </div>
+    </div>
+    <div class="footer-copy">© 2026 Glow360, Auckland, New Zealand.</div>
+  </div>
+</footer>
+
+</body>
+</html>
