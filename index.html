@@ -39,7 +39,8 @@
   .btn-secondary { background: rgba(255,255,255,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-color: rgba(32,29,24,0.15); color: #201D18; }
   .btn-secondary:hover { border-color: #A8824F; color: #A8824F; }
 
-  .tour-embed { width: 100%; height: 85vh; min-height: 480px; margin-top: 56px; overflow: hidden; background: #000; }
+  .tour-section { margin: 0; padding: 0; line-height: 0; }
+  .tour-embed { width: 100%; height: 100vh; overflow: hidden; background: #000; }
   .tour-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
 
   .triad { padding: 56px 0 72px; border-top: 1px solid rgba(32,29,24,0.08); display: flex; justify-content: center; align-items: center; gap: 28px; flex-wrap: wrap; text-align: center; }
@@ -80,7 +81,7 @@
     .nav-links a:not(.nav-cta) { display: none; }
     .proof-card { flex-direction: column; align-items: flex-start; }
     .triad { gap: 32px; }
-    .tour-embed { height: 60vh; min-height: 360px; margin-top: 40px; }
+    .tour-embed { height: 60vh; min-height: 360px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
@@ -139,7 +140,9 @@
       <a href="https://tours.glow360.co.nz/" class="btn-secondary">View a Live Tour</a>
     </div>
   </div>
+</section>
 
+<section class="tour-section">
   <div class="tour-embed">
     <iframe src="https://tours.glow360.co.nz/client-001-wintergardens/" loading="lazy" allowfullscreen></iframe>
   </div>
