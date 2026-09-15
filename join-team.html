@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join the Team — Glow360</title>
+<meta name="description" content="Apply to join the Glow360 photographer network — vetted, equipped, and growing across New Zealand.">
+
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Italiana&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #F5EFE2; color: #201D18; font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+  a { color: inherit; }
+  img, svg { display: block; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; }
+  .nav-logo { font-family: 'Italiana', serif; font-size: 26px; letter-spacing: 0.04em; color: #201D18; text-decoration: none; }
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-links a { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
+  .nav-links a:hover { color: #201D18; }
+  .nav-cta { padding: 10px 22px; background: rgba(255,255,255,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(32,29,24,0.15); border-radius: 30px; color: #201D18 !important; transition: all 0.2s ease; }
+  .nav-cta:hover { background: #201D18; color: #F5EFE2 !important; border-color: #201D18; }
+
+  .back-link { padding: 8px 0 0; font-size: 12px; }
+  .back-link a { color: rgba(32,29,24,0.5); text-decoration: none; }
+  .back-link a:hover { color: #201D18; }
+
+  .page-header { padding: 48px 0 56px; text-align: center; }
+  .page-header h1 { margin: 0 0 16px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 48px; }
+  .page-header p { margin: 0 auto; max-width: 520px; font-size: 16px; line-height: 1.7; color: rgba(32,29,24,0.6); }
+
+  .trust-banner {
+    display: flex; align-items: flex-start; gap: 16px;
+    background: rgba(32,29,24,0.04); border: 1px solid rgba(32,29,24,0.1);
+    border-radius: 14px; padding: 22px 26px; margin-bottom: 64px;
+  }
+  .trust-banner p { margin: 0; font-size: 14px; line-height: 1.7; color: rgba(32,29,24,0.75); }
+  .trust-banner strong { color: #201D18; }
+
+  .section { padding: 0 0 64px; }
+  .section-heading { text-align: center; margin-bottom: 32px; }
+  .section-heading h2 { font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 30px; margin: 0 0 8px; }
+  .section-heading p { margin: 0 auto; max-width: 480px; font-size: 14px; color: rgba(32,29,24,0.55); }
+
+  .assessment-list { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .assessment-item {
+    background: rgba(255,255,255,0.55); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(32,29,24,0.1); border-radius: 14px; padding: 20px 24px;
+  }
+  .assessment-item h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #A8824F; }
+  .assessment-item p { margin: 0; font-size: 14px; line-height: 1.6; color: rgba(32,29,24,0.7); }
+
+  .opportunity-card {
+    max-width: 640px; margin: 0 auto; text-align: center; padding: 40px 32px; border-radius: 18px;
+    background: #201D18; color: #F5EFE2;
+  }
+  .opportunity-card p { margin: 0 0 12px; font-size: 15px; line-height: 1.7; color: rgba(245,239,226,0.8); }
+  .opportunity-card p:last-child { margin-bottom: 0; }
+  .opportunity-card strong { color: #F5EFE2; }
+
+  /* ---------- Application form ---------- */
+  .form-wrapper {
+    max-width: 560px; margin: 0 auto;
+    background: rgba(255,255,255,0.55); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(32,29,24,0.1); border-radius: 18px; padding: 36px;
+    box-shadow: 0 20px 40px rgba(90,70,40,0.1);
+  }
+  .form-group { margin-bottom: 20px; display: flex; flex-direction: column; }
+  .form-group label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(32,29,24,0.65); margin-bottom: 8px; }
+  .form-group input, .form-group textarea {
+    background: rgba(255,255,255,0.7); border: 1px solid rgba(32,29,24,0.15); border-radius: 8px;
+    padding: 12px 16px; color: #201D18; font-size: 14px; font-family: 'Inter', sans-serif; width: 100%;
+  }
+  .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #A8824F; box-shadow: 0 0 0 3px rgba(168,130,79,0.15); }
+  .checkbox-row { display: flex; align-items: flex-start; gap: 10px; }
+  .checkbox-row input { width: auto; margin-top: 3px; }
+  .checkbox-row label { font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: normal; color: rgba(32,29,24,0.75); }
+  .hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .submit-btn {
+    width: 100%; padding: 15px; background: #201D18; color: #F5EFE2; border: none;
+    border-radius: 30px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; cursor: pointer; transition: all 0.2s ease;
+  }
+  .submit-btn:hover:not(:disabled) { background: #A8824F; }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .form-message { min-height: 18px; margin: 12px 0 0; font-size: 13px; text-align: center; }
+  .form-message.error { color: #B5533C; }
+  .form-message.success { color: #5C7A5E; }
+  .address-results {
+    display: none; position: relative; z-index: 20; margin-top: -14px; margin-bottom: 20px;
+    max-height: 200px; overflow-y: auto; background: #FBF8F1;
+    border: 1px solid rgba(32,29,24,0.12); border-radius: 8px; box-shadow: 0 12px 30px rgba(90,70,40,0.15);
+  }
+  .address-result-item { padding: 10px 14px; font-size: 13px; color: rgba(32,29,24,0.8); cursor: pointer; border-bottom: 1px solid rgba(32,29,24,0.06); }
+  .address-result-item:last-child { border-bottom: none; }
+  .address-result-item:hover { background: rgba(32,29,24,0.05); }
+
+  /* ---------- Notice board gate (inert placeholder) ---------- */
+  .board-gate {
+    max-width: 560px; margin: 0 auto; padding: 28px 32px; border-radius: 18px;
+    border: 1px dashed rgba(32,29,24,0.25); text-align: center;
+  }
+  .board-gate h3 { margin: 0 0 8px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 22px; }
+  .board-gate p { margin: 0 0 20px; font-size: 13px; color: rgba(32,29,24,0.55); }
+  .board-gate-row { display: flex; gap: 10px; }
+  .board-gate-row input { flex: 1; }
+  .board-gate-row button { padding: 0 22px; border-radius: 8px; }
+  .board-gate-note { margin-top: 14px; font-size: 11px; color: rgba(32,29,24,0.4); }
+
+  .footer { border-top: 1px solid rgba(32,29,24,0.08); padding: 40px 0; margin-top: 40px; }
+  .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .footer-brand { font-family: 'Italiana', serif; font-size: 19px; letter-spacing: 0.04em; color: rgba(32,29,24,0.7); }
+  .footer-links { display: flex; align-items: center; gap: 24px; }
+  .footer-links a { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(32,29,24,0.6); text-decoration: none; transition: color 0.2s ease; }
+  .footer-links a:hover { color: #201D18; }
+  .footer-links svg { width: 15px; height: 15px; }
+  .footer-copy { text-align: center; margin-top: 24px; font-size: 11px; color: rgba(32,29,24,0.4); }
+
+  @media (max-width: 640px) {
+    .page-header { padding: 40px 0 40px; } .page-header h1 { font-size: 32px; }
+    .nav-links a:not(.nav-cta) { display: none; }
+    .trust-banner { flex-direction: column; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="nav">
+    <a href="index.html" class="nav-logo">Glow360</a>
+    <div class="nav-links">
+      <a href="https://tours.glow360.co.nz/">Tours</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="team.html">Meet the Team</a>
+      <a href="index.html#book" class="nav-cta">Book Now</a>
+    </div>
+  </nav>
+  <p class="back-link">← <a href="team.html">Meet the current team</a></p>
+</div>
+
+<section class="page-header">
+  <div class="wrap">
+    <h1>Join the team.</h1>
+    <p>We're growing a network of trusted, equipped photographers across New Zealand — one region at a time.</p>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="trust-banner">
+    <div>
+      <p><strong>Every photographer is vetted before they're approved.</strong> Because Glow360 photographers work unaccompanied inside clients' homes, all applicants must pass a standard New Zealand background check, demonstrate they own and can competently use their own 360° equipment, and commit to at least one full day of availability per week before being assigned any bookings.</p>
+    </div>
+  </div>
+</div>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-heading">
+      <h2>The practical assessment.</h2>
+      <p>After your application, you'll be invited to submit a trial tour before any bookings are assigned.</p>
+    </div>
+    <div class="assessment-list">
+      <div class="assessment-item">
+        <h3>10-Scene Layout</h3>
+        <p>Capture a full multi-room residential floor plan using your own equipment, start to finish.</p>
+      </div>
+      <div class="assessment-item">
+        <h3>Exposure &amp; Alignment</h3>
+        <p>Clean dynamic range with no blown-out windows, and properly vertical lines throughout.</p>
+      </div>
+      <div class="assessment-item">
+        <h3>Custom Waypoint Mapping</h3>
+        <p>Scenes linked together logically, so a viewer can walk through the property naturally.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="opportunity-card">
+      <p>Every session is <strong>$250 + GST</strong>. <strong>$150 goes directly to you</strong> — the rest supports the booking platform, scheduling, and national marketing.</p>
+      <p>New members start with <strong>one suburb pair</strong> — a single day each week. As you prove reliable, you can grow to as many as <strong>five pairs</strong>: a full working week, up to 20 sessions, and <strong>$3,000</strong> a week at full capacity.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="apply">
+  <div class="wrap">
+    <div class="section-heading">
+      <h2>Apply Now</h2>
+      <p>Tell us about yourself and where you're based — we'll be in touch to start the process.</p>
+    </div>
+
+    <div class="form-wrapper">
+      <form id="application-form" onsubmit="submitApplication(event)">
+        <div class="form-group">
+          <label for="app-name">Full Name</label>
+          <input type="text" id="app-name" required maxlength="200" placeholder="e.g. Jane Smith">
+        </div>
+
+        <div class="form-group">
+          <label for="app-email">Email Address</label>
+          <input type="email" id="app-email" required maxlength="255" placeholder="jane@example.co.nz">
+        </div>
+
+        <div class="form-group">
+          <label for="app-phone">Phone Number</label>
+          <input type="text" id="app-phone" placeholder="021 123 4567">
+        </div>
+
+        <!-- Honeypot -->
+        <div class="form-group hp-field" aria-hidden="true">
+          <label for="app-company">Company</label>
+          <input type="text" id="app-company" tabindex="-1" autocomplete="off">
+        </div>
+
+        <div class="form-group" style="position:relative;">
+          <label for="app-region">Base Location</label>
+          <input type="text" id="app-region" required maxlength="300" placeholder="Start typing your city or suburb..." autocomplete="off">
+          <div id="address-results" class="address-results"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="app-equipment">Camera &amp; Equipment</label>
+          <textarea id="app-equipment" rows="3" required maxlength="1000" placeholder="Camera body, lens(es), tripod, and any 360° processing software you use..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="app-message">Anything Else?</label>
+          <textarea id="app-message" rows="3" maxlength="1000" placeholder="Optional — tell us a bit about yourself"></textarea>
+        </div>
+
+        <div class="form-group">
+          <div class="checkbox-row">
+            <input type="checkbox" id="app-availability" required>
+            <label for="app-availability">I can commit to at least one full day of availability per week if approved.</label>
+          </div>
+        </div>
+
+        <p id="form-message" class="form-message" role="status"></p>
+
+        <button type="submit" id="submit-btn" class="submit-btn">Submit Application</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="board-gate">
+      <h3>Notice Board</h3>
+      <p>Already approved? The job board is unlocked with a rotating weekly access phrase — coming soon.</p>
+      <div class="board-gate-row">
+        <input type="password" placeholder="Weekly access phrase" disabled>
+        <button type="button" class="submit-btn" disabled>Unlock</button>
+      </div>
+      <p class="board-gate-note">Not live yet — approved members will receive the phrase directly each week.</p>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-row">
+      <div class="footer-brand">Glow360</div>
+      <div class="footer-links">
+        <a href="mailto:info@glow360.co.nz">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"></path><path d="M4 7l8 6 8-6"></path></svg>
+          info@glow360.co.nz
+        </a>
+        <!-- REPLACE THIS HREF WITH YOUR REAL FACEBOOK PAGE URL -->
+        <a href="https://www.facebook.com/YOUR-PAGE-HERE" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 21v-7.5h2.5l.5-3h-3V8.5c0-.9.25-1.5 1.5-1.5H16.5V4.3c-.27-.04-1.2-.13-2.28-.13-2.26 0-3.8 1.38-3.8 3.9V10.5h-2.5v3h2.5V21h3z"></path></svg>
+          Facebook
+        </a>
+      </div>
+    </div>
+    <div class="footer-copy">© 2026 Glow360, Auckland, New Zealand.</div>
+  </div>
+</footer>
+
+<script>
+  const SUPABASE_URL = "https://caaenhofcnxbhiskqrzk.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_0_LFFrnDqpVY-HVD0ZjACg_QV_veOcw";
+  const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let addressSearchTimer = null;
+
+  function showFormMessage(text, type) {
+    const el = document.getElementById('form-message');
+    el.textContent = text || '';
+    el.className = 'form-message' + (type ? ' ' + type : '');
+  }
+
+  function hideAddressResults() {
+    const list = document.getElementById('address-results');
+    list.innerHTML = '';
+    list.style.display = 'none';
+  }
+
+  function renderAddressResults(results) {
+    const list = document.getElementById('address-results');
+    list.innerHTML = '';
+    if (!results.length) { list.style.display = 'none'; return; }
+    results.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'address-result-item';
+      item.textContent = r.display_name;
+      item.addEventListener('click', () => {
+        document.getElementById('app-region').value = r.display_name;
+        hideAddressResults();
+      });
+      list.appendChild(item);
+    });
+    list.style.display = 'block';
+  }
+
+  async function runAddressSearch(query) {
+    try {
+      // No country restriction here — unlike the booking form, applicants
+      // can be based anywhere, which is the whole point of the network.
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=' + encodeURIComponent(query);
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en-NZ' } });
+      const results = await res.json();
+      renderAddressResults(results || []);
+    } catch (err) {
+      console.error('Address lookup failed:', err);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const regionInput = document.getElementById('app-region');
+    regionInput.addEventListener('input', function() {
+      clearTimeout(addressSearchTimer);
+      const query = regionInput.value.trim();
+      hideAddressResults();
+      if (query.length < 4) return;
+      addressSearchTimer = setTimeout(() => runAddressSearch(query), 450);
+    });
+    document.addEventListener('click', function(e) {
+      if (e.target !== regionInput) hideAddressResults();
+    });
+  });
+
+  async function submitApplication(event) {
+    event.preventDefault();
+    if (document.getElementById('app-company').value.trim() !== '') return; // honeypot
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.innerText = "Submitting...";
+    showFormMessage('', null);
+
+    const { error } = await _supabase.from('contractor_applications').insert([{
+      full_name: document.getElementById('app-name').value.trim(),
+      email: document.getElementById('app-email').value.trim(),
+      phone: document.getElementById('app-phone').value.trim(),
+      region: document.getElementById('app-region').value.trim(),
+      equipment_description: document.getElementById('app-equipment').value.trim(),
+      availability_confirmed: document.getElementById('app-availability').checked,
+      message: document.getElementById('app-message').value.trim()
+    }]);
+
+    if (error) {
+      btn.disabled = false;
+      btn.innerText = "Submit Application";
+      showFormMessage('Something went wrong submitting your application. Please try again.', 'error');
+      console.error('Application error:', error.message);
+      return;
+    }
+
+    showFormMessage("Thanks! We've received your application and will be in touch.", 'success');
+    document.getElementById('application-form').reset();
+    btn.innerText = "Submit Application";
+  }
+</script>
+
+</body>
+</html>
