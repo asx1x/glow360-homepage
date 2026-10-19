@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&family=Inter:wght@400;500;600;700&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Glow360 Tour Builder (prototype)</title>
+<style>
+/* ===== THEME: matched by eye to glow360.co.nz (booking form). Edit the tokens to retune. ===== */
+:root{
+  box-sizing:border-box;color-scheme:light;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#f4ebde;--card:#faf7f0;--field:#fdfcf8;--line:#e6dfd1;--line2:#d6cebd;
+  --ink:#1c1a16;--label:#5c574d;--muted:#8a8477;--link:#a5763f;
+  --btn:#1c1a16;--btn-ink:#faf6ee;--disabled:#efece4;
+  --bad:#b3261e;--good:#3f7d4e;--warn:#9a6a1c;--shadow:0 10px 34px rgba(80,55,20,.10);
+  --serif:"Cormorant Garamond","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans);-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+
+/* layout: scene rail left, panorama centre, three buttons under it */
+#app{display:grid;height:100%;grid-template-columns:292px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"head head" "side stage" "side actions"}
+header{grid-area:head;display:flex;align-items:center;gap:12px;padding:14px 22px 12px}
+header h1{margin:0;font:italic 600 27px/1 var(--serif);letter-spacing:.2px}
+header .tag{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--label);background:rgba(28,26,22,.06);padding:4px 10px;border-radius:99px}
+header .sp{flex:1}
+#sidebar{grid-area:side;margin:0 0 14px 14px;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:auto;padding:16px;min-width:0}
+#stagewrap{grid-area:stage;position:relative;padding:0 14px;min-height:0;display:flex;justify-content:center}
+#stage{position:relative;width:100%;height:100%;overflow:hidden;background:#000;border-radius:18px;box-shadow:var(--shadow)}
+#pano{position:absolute;inset:0;touch-action:none}
+#actions{grid-area:actions;display:flex;justify-content:flex-end;gap:10px;padding:14px 14px 16px}
+
+/* type + form controls */
+h2.sec{margin:0 0 10px;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
+.muted{color:var(--muted);font-size:12.5px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+input[type=text],select,textarea{font:400 14px var(--sans);padding:12px 14px;border-radius:10px;border:1px solid var(--line2);background:var(--field);color:var(--ink);min-width:0}
+input::placeholder,textarea::placeholder{color:#9b9587}
+input[type=text]:focus,select:focus,textarea:focus{outline:2px solid rgba(165,118,63,.35);outline-offset:0;border-color:var(--link)}
+.btn,.abtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:700 11.5px var(--sans);letter-spacing:.09em;text-transform:uppercase;padding:12px 20px;border-radius:999px;border:1px solid var(--line2);background:var(--field);color:var(--ink);cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover:not(:disabled),.abtn:hover:not(:disabled){border-color:var(--ink)}
+.btn.pri{background:var(--btn);border-color:var(--btn);color:var(--btn-ink)}
+.btn.pri:hover:not(:disabled){background:#000;border-color:#000}
+.btn.sm{padding:7px 13px;font-size:10.5px}
+.btn.dng{color:var(--bad)}
+.btn:disabled,.abtn:disabled{opacity:.45;cursor:not-allowed}
+.abtn{padding:13px 22px;font-size:12px}
+.bar{height:5px;border-radius:99px;background:var(--line);overflow:hidden;margin:6px 0 2px}.bar>i{display:block;height:100%;width:0;background:var(--ink);transition:width .1s}
+.err{color:var(--bad);font-size:13px;margin:0 0 8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13.5px;margin-bottom:12px}.kv span{color:var(--label)}.kv b{font-weight:600;text-align:right;word-break:break-word}
+.ok{color:var(--good)}.no{color:var(--bad)}.wn{color:var(--warn)}
+.list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+
+/* scene rail */
+.scard{position:relative;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 4px;border:1px solid var(--line);border-radius:12px;background:var(--field);cursor:pointer;user-select:none;-webkit-user-select:none}
+.scard:hover{border-color:var(--line2)}
+.scard.cur{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.scard.dragging{opacity:.95;z-index:20;box-shadow:0 12px 28px rgba(60,40,10,.28);cursor:grabbing;transition:none}
+.scard.drop-before::before,.scard.drop-after::after{content:"";position:absolute;left:0;right:0;height:3px;background:var(--ink);border-radius:3px}
+.scard.drop-before::before{top:-6px}.scard.drop-after::after{bottom:-6px}
+.grip{flex:0 0 auto;width:16px;text-align:center;color:var(--muted);cursor:grab;touch-action:none;font-size:14px;line-height:1;letter-spacing:-2px}
+.thumb{position:relative;flex:0 0 auto;width:96px;height:48px;border-radius:8px;overflow:hidden;background:#000}
+.thumb canvas{display:block;width:100%;height:100%}
+.thumb .num{position:absolute;left:4px;top:3px;font-size:10.5px;font-weight:700;background:rgba(0,0,0,.66);color:#fff;border-radius:4px;padding:0 5px}
+.thumb .del{position:absolute;right:3px;top:3px;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.72);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:none}
+.scard:hover .del,.scard.cur .del{display:block}.thumb .del:hover{background:var(--bad)}
+.sinfo{flex:1;min-width:0}
+.sname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smeta{font-size:11.5px;color:var(--muted)}.smeta.start{color:var(--good);font-weight:500}
+
+/* over the panorama */
+#tourtitle{position:absolute;left:16px;top:14px;z-index:4;pointer-events:none;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+#tourtitle b{display:block;font:italic 600 21px/1.15 var(--serif);letter-spacing:.2px}
+#tourtitle b.dim{opacity:.65;font-weight:500}
+#tourtitle .scn{pointer-events:auto;display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:2px 6px 2px 0;background:none;border:0;color:#fff;font:500 12px var(--sans);opacity:.9;cursor:text;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+#tourtitle .scn:hover{opacity:1}
+#tourtitle .scn-input{pointer-events:auto;display:block;margin-top:4px;font-size:13px;padding:6px 10px;width:220px;max-width:70vw}
+#empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#efe7d8;text-align:center;padding:20px}
+#empty strong{font:italic 600 26px var(--serif);font-weight:600}
+#empty p{margin:0;max-width:320px;color:#b8b1a2;font-size:13.5px}
+#empty .btn{background:transparent;border-color:rgba(255,255,255,.4);color:#f4ebde}
+#empty .btn.pri{background:#f4ebde;border-color:#f4ebde;color:#1c1a16}
+#status{position:absolute;top:14px;right:14px;z-index:5;max-width:min(360px,62%);display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#status #prog,#status .err{background:rgba(250,247,240,.97);border:1px solid var(--line);border-radius:12px;padding:9px 13px;margin:0;box-shadow:var(--shadow)}
+#status #prog{min-width:200px}
+
+/* hotspots: same look as the live tours; tool ring appears on hover/selection */
+.hs{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;cursor:pointer;touch-action:none}
+.hs .mk{position:absolute;left:6px;top:6px;width:32px;height:32px;border-radius:50%;background:#fff;border:2px solid rgba(0,0,0,.15);box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;pointer-events:none}
+.hs .mk svg{display:block}
+.hs.info .mk{background:rgba(255,255,255,.88);border:2px solid #00d2ff;font:700 15px Georgia,serif;color:#111}
+.hs.sel .mk{box-shadow:0 0 0 3px #fff,0 0 0 7px rgba(255,255,255,.25),0 2px 8px rgba(0,0,0,.4)}
+.hs .tool{position:absolute;top:-19px;width:26px;height:26px;border-radius:50%;border:0;padding:0;background:#fff;color:var(--ink);display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.hs .tool:hover,.hs .tool:focus-visible{background:#efe8da;outline:none}
+.hs .tool{top:-19px}
+.hs .t-edit{left:-19px}.hs .t-go{left:9px;top:-31px}.hs .t-del{left:37px}
+.hs .tool svg{display:block}
+.hs:hover .tool,.hs.sel .tool,.hs.pop .tool,.hs:focus-within .tool{display:flex}
+.hs:hover,.hs.pop,.hs.sel,.hs:focus-within{z-index:30}
+.hs .lbl{position:absolute;top:50px;left:50%;transform:translateX(-50%);white-space:nowrap;font:500 12px var(--sans);background:rgba(20,18,14,.78);color:#fff;padding:3px 9px;border-radius:99px;pointer-events:none;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:none}
+.hs.lnk:hover>.lbl{display:block}.hs.lnk.pop>.lbl,.hs.lnk.sel>.lbl{display:none}
+.hs-menu{position:absolute;top:100%;left:50%;transform:translateX(-50%);padding-top:8px;display:none;z-index:40;cursor:default;text-align:left}
+.hs-menu.up{top:auto;bottom:100%;padding-top:0;padding-bottom:8px}
+.hs-menu.l{left:0;transform:none}.hs-menu.r{left:auto;right:0;transform:none}
+.hs-menu .box{width:228px;max-height:250px;overflow:auto;background:var(--card);color:var(--ink);border:1px solid var(--line2);border-radius:12px;box-shadow:0 14px 34px rgba(30,18,4,.4)}
+.hs-menu .hd{display:flex;align-items:center;justify-content:space-between;padding:9px 8px 9px 14px;font:700 10.5px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--label);border-bottom:1px solid var(--line)}
+.hs-menu .hd .x{background:none;border:0;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:0 4px}.hs-menu .hd .x:hover{color:var(--ink)}
+.hs-menu .opt{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:none;border:0;color:var(--ink);font:500 13px var(--sans);text-align:left;cursor:pointer}
+.hs-menu .opt:hover,.hs-menu .opt:focus-visible{background:#f0e9db;outline:none}
+.hs-menu .opt .n{flex:0 0 auto;width:18px;color:var(--muted);font-size:11.5px}
+.hs-menu .opt .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hs-menu .opt.on{background:#f3ecdf}.hs-menu .opt.on::after{content:"✓";color:var(--good);flex:0 0 auto;font-weight:700}
+.hs-menu input.ti{display:block;width:calc(100% - 24px);margin:12px}
+.hs-menu .note{padding:0 14px 12px;font-size:11.5px;color:var(--muted)}
+.hs.lnk.pop>.hs-menu,.hs.info.sel>.hs-menu{display:block}
+@media (hover:none){.hs.lnk.sel>.hs-menu{display:block}}
+.hs.menu-closed>.hs-menu,.hs.dragging>.hs-menu{display:none!important}
+
+/* publish / details dialog */
+#modal{position:fixed;inset:0;background:rgba(40,28,10,.42);display:none;align-items:center;justify-content:center;z-index:40;padding:16px}
+#modal .card{background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:0 28px 70px rgba(40,25,5,.28);padding:28px 28px 22px;max-width:480px;width:100%;max-height:92vh;overflow:auto}
+#modal h3{margin:0 0 16px;text-align:center;font:italic 600 30px/1.1 var(--serif)}
+.modal-field{display:block;margin:0 0 7px;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
+#modal input[type=text]{width:100%}
+#modal .fh{margin:7px 0 0;font-size:12px}
+#modal p.err{margin:7px 0 0}
+#modal .mfoot{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:18px 0 0}
+#modal .mfoot .btn{width:100%;padding:15px 20px}
+#modal .mfoot #modal-x{border-color:transparent;background:none;color:var(--muted)}
+#modal .mfoot #modal-x:hover{color:var(--ink)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--btn-ink);padding:10px 18px;border-radius:99px;font-size:13px;display:none;z-index:50;max-width:90%}
+
+/* narrow screens: rail stays on the left as a slim thumbnail strip */
+@media (max-width:759px){
+  #app{grid-template-columns:100px minmax(0,1fr)}
+  header{padding:12px 14px 10px}header h1{font-size:23px}header .tag{display:none}
+  #sidebar{margin:0 0 12px 10px;padding:8px 6px;border-radius:16px}
+  #sidebar h2.sec,.hint,.price,.lw,.sinfo{display:none}
+  .addrow{margin-bottom:8px}.addrow .btn{width:100%;padding:10px 6px}
+  .scard{flex-direction:column;align-items:center;gap:2px;padding:4px 4px 6px}
+  .grip{width:auto;transform:rotate(90deg);height:12px}
+  .thumb{width:100%;height:auto;aspect-ratio:2/1}
+  #stagewrap{padding:0 10px}#stage{border-radius:16px}
+  #actions{gap:6px;padding:12px 10px 14px}
+  .abtn{flex:1 1 0;min-width:0;padding:11px 4px;font-size:10.5px;letter-spacing:.06em;flex-direction:column;gap:5px;text-align:center}
+  #modal .card{padding:22px 18px 18px}
+}
+
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Glow360</h1><span class="tag">Tour builder · prototype</span><span class="sp"></span>
+    <span class="muted" id="hstat"></span>
+    <button class="btn pri" id="publish" disabled>Publish · $100 + GST</button>
+  </header>
+
+  <aside id="sidebar" aria-label="Scenes">
+    <h2 class="sec">Scenes</h2>
+    <div class="row addrow"><button class="btn pri" id="add" aria-label="Add photo">＋<span class="lw"> Add photo</span></button><input type="file" id="file" accept="image/*" multiple hidden></div>
+    <div class="list" id="scene-list"></div>
+    <p class="muted price" id="price-note"></p>
+    <p class="muted hint">Drag to reorder. The first scene is where visitors start.</p>
+  </aside>
+
+  <div id="stagewrap">
+    <div id="stage">
+      <div id="pano"></div>
+      <div id="tourtitle"><b id="tt-name"></b><button id="tt-scene" class="scn" type="button" title="Rename this scene"><span id="tt-scene-t"></span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button></div>
+      <div id="empty">
+        <div style="font-size:34px" aria-hidden="true">◎</div>
+        <strong>Add a 360° photo to start</strong>
+        <p>Use an equirectangular (2:1) panorama from your camera, or try the demo scenes.</p>
+        <div class="row" style="justify-content:center;margin:0">
+          <button class="btn pri" id="empty-add">Add photo</button>
+          <button class="btn" id="empty-demo">Load 2 demo scenes</button>
+        </div>
+      </div>
+      <div id="status"><div id="prog" style="display:none"><div class="muted" id="prog-t"></div><div class="bar"><i id="prog-b"></i></div></div><p class="err" id="err" style="display:none"></p></div>
+      
+    </div>
+  </div>
+
+  <div id="actions" role="toolbar" aria-label="Hotspot tools">
+    <button class="abtn" id="b-info" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>Info hotspot</span></button>
+    <button class="abtn" id="b-link" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 13l4-4 4 4"/></svg><span>Link hotspot</span></button>
+    <button class="abtn" id="b-start" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span><span class="lw">Set </span>initial view</span></button>
+  </div>
+</div>
+
+<div id="modal" role="dialog" aria-modal="true"><div class="card"><h3 id="modal-t"></h3><div id="modal-b"></div><div class="mfoot"><button class="btn pri" id="modal-go" style="display:none"></button><button class="btn" id="modal-x">Close</button></div></div></div>
+<div id="toast" role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marzipano/0.10.2/marzipano.js"></script>
+<script>
+/*CORE*/
+</script>
+<script>
+/*API*/
+</script>
+<script>
+/*DRAFT*/
+</script>
+<script>
+/*APP*/
+</script>
+</body>
+</html>

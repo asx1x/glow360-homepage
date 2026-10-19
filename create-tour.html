@@ -2,9 +2,373 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Glow360 Tour Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&family=Inter:wght@400;500;600;700&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Glow360 Tour Builder (prototype)</title>
+<style>
+/* ===== THEME: matched by eye to glow360.co.nz (booking form). Edit the tokens to retune. ===== */
+:root{
+  box-sizing:border-box;color-scheme:light;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#f4ebde;--card:#faf7f0;--field:#fdfcf8;--line:#e6dfd1;--line2:#d6cebd;
+  --ink:#1c1a16;--label:#5c574d;--muted:#8a8477;--link:#a5763f;
+  --btn:#1c1a16;--btn-ink:#faf6ee;--disabled:#efece4;
+  --bad:#b3261e;--good:#3f7d4e;--warn:#9a6a1c;--shadow:0 10px 34px rgba(80,55,20,.10);
+  --serif:"Cormorant Garamond","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans);-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+
+/* layout: scene rail left, panorama centre, three buttons under it */
+#app{display:grid;height:100%;grid-template-columns:292px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"head head" "side stage" "side actions"}
+header{grid-area:head;display:flex;align-items:center;gap:12px;padding:14px 22px 12px}
+header h1{margin:0;font:italic 600 27px/1 var(--serif);letter-spacing:.2px}
+header .tag{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--label);background:rgba(28,26,22,.06);padding:4px 10px;border-radius:99px}
+header .sp{flex:1}
+#sidebar{grid-area:side;margin:0 0 14px 14px;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:auto;padding:16px;min-width:0}
+#stagewrap{grid-area:stage;position:relative;padding:0 14px;min-height:0;display:flex;justify-content:center}
+#stage{position:relative;width:100%;height:100%;overflow:hidden;background:#000;border-radius:18px;box-shadow:var(--shadow)}
+#pano{position:absolute;inset:0;touch-action:none}
+#actions{grid-area:actions;display:flex;justify-content:flex-end;gap:10px;padding:14px 14px 16px}
+
+/* type + form controls */
+h2.sec{margin:0 0 10px;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
+.muted{color:var(--muted);font-size:12.5px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+input[type=text],select,textarea{font:400 14px var(--sans);padding:12px 14px;border-radius:10px;border:1px solid var(--line2);background:var(--field);color:var(--ink);min-width:0}
+input::placeholder,textarea::placeholder{color:#9b9587}
+input[type=text]:focus,select:focus,textarea:focus{outline:2px solid rgba(165,118,63,.35);outline-offset:0;border-color:var(--link)}
+.btn,.abtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:700 11.5px var(--sans);letter-spacing:.09em;text-transform:uppercase;padding:12px 20px;border-radius:999px;border:1px solid var(--line2);background:var(--field);color:var(--ink);cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover:not(:disabled),.abtn:hover:not(:disabled){border-color:var(--ink)}
+.btn.pri{background:var(--btn);border-color:var(--btn);color:var(--btn-ink)}
+.btn.pri:hover:not(:disabled){background:#000;border-color:#000}
+.btn.sm{padding:7px 13px;font-size:10.5px}
+.btn.dng{color:var(--bad)}
+.btn:disabled,.abtn:disabled{opacity:.45;cursor:not-allowed}
+.abtn{padding:13px 22px;font-size:12px}
+.bar{height:5px;border-radius:99px;background:var(--line);overflow:hidden;margin:6px 0 2px}.bar>i{display:block;height:100%;width:0;background:var(--ink);transition:width .1s}
+.err{color:var(--bad);font-size:13px;margin:0 0 8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13.5px;margin-bottom:12px}.kv span{color:var(--label)}.kv b{font-weight:600;text-align:right;word-break:break-word}
+.ok{color:var(--good)}.no{color:var(--bad)}.wn{color:var(--warn)}
+.list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+
+/* scene rail */
+.scard{position:relative;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 4px;border:1px solid var(--line);border-radius:12px;background:var(--field);cursor:pointer;user-select:none;-webkit-user-select:none}
+.scard:hover{border-color:var(--line2)}
+.scard.cur{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.scard.dragging{opacity:.95;z-index:20;box-shadow:0 12px 28px rgba(60,40,10,.28);cursor:grabbing;transition:none}
+.scard.drop-before::before,.scard.drop-after::after{content:"";position:absolute;left:0;right:0;height:3px;background:var(--ink);border-radius:3px}
+.scard.drop-before::before{top:-6px}.scard.drop-after::after{bottom:-6px}
+.grip{flex:0 0 auto;width:16px;text-align:center;color:var(--muted);cursor:grab;touch-action:none;font-size:14px;line-height:1;letter-spacing:-2px}
+.thumb{position:relative;flex:0 0 auto;width:96px;height:48px;border-radius:8px;overflow:hidden;background:#000}
+.thumb canvas{display:block;width:100%;height:100%}
+.thumb .num{position:absolute;left:4px;top:3px;font-size:10.5px;font-weight:700;background:rgba(0,0,0,.66);color:#fff;border-radius:4px;padding:0 5px}
+.thumb .del{position:absolute;right:3px;top:3px;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.72);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:none}
+.scard:hover .del,.scard.cur .del{display:block}.thumb .del:hover{background:var(--bad)}
+.sinfo{flex:1;min-width:0}
+.sname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smeta{font-size:11.5px;color:var(--muted)}.smeta.start{color:var(--good);font-weight:500}
+
+/* over the panorama */
+#tourtitle{position:absolute;left:16px;top:14px;z-index:4;pointer-events:none;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+#tourtitle b{display:block;font:italic 600 21px/1.15 var(--serif);letter-spacing:.2px}
+#tourtitle b.dim{opacity:.65;font-weight:500}
+#tourtitle .scn{pointer-events:auto;display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:2px 6px 2px 0;background:none;border:0;color:#fff;font:500 12px var(--sans);opacity:.9;cursor:text;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+#tourtitle .scn:hover{opacity:1}
+#tourtitle .scn-input{pointer-events:auto;display:block;margin-top:4px;font-size:13px;padding:6px 10px;width:220px;max-width:70vw}
+#empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#efe7d8;text-align:center;padding:20px}
+#empty strong{font:italic 600 26px var(--serif);font-weight:600}
+#empty p{margin:0;max-width:320px;color:#b8b1a2;font-size:13.5px}
+#empty .btn{background:transparent;border-color:rgba(255,255,255,.4);color:#f4ebde}
+#empty .btn.pri{background:#f4ebde;border-color:#f4ebde;color:#1c1a16}
+#status{position:absolute;top:14px;right:14px;z-index:5;max-width:min(360px,62%);display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#status #prog,#status .err{background:rgba(250,247,240,.97);border:1px solid var(--line);border-radius:12px;padding:9px 13px;margin:0;box-shadow:var(--shadow)}
+#status #prog{min-width:200px}
+
+/* hotspots: same look as the live tours; tool ring appears on hover/selection */
+.hs{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;cursor:pointer;touch-action:none}
+.hs .mk{position:absolute;left:6px;top:6px;width:32px;height:32px;border-radius:50%;background:#fff;border:2px solid rgba(0,0,0,.15);box-shadow:0 2px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;pointer-events:none}
+.hs .mk svg{display:block}
+.hs.info .mk{background:rgba(255,255,255,.88);border:2px solid #00d2ff;font:700 15px Georgia,serif;color:#111}
+.hs.sel .mk{box-shadow:0 0 0 3px #fff,0 0 0 7px rgba(255,255,255,.25),0 2px 8px rgba(0,0,0,.4)}
+.hs .tool{position:absolute;top:-19px;width:26px;height:26px;border-radius:50%;border:0;padding:0;background:#fff;color:var(--ink);display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.hs .tool:hover,.hs .tool:focus-visible{background:#efe8da;outline:none}
+.hs .tool{top:-19px}
+.hs .t-edit{left:-19px}.hs .t-go{left:9px;top:-31px}.hs .t-del{left:37px}
+.hs .tool svg{display:block}
+.hs:hover .tool,.hs.sel .tool,.hs.pop .tool,.hs:focus-within .tool{display:flex}
+.hs:hover,.hs.pop,.hs.sel,.hs:focus-within{z-index:30}
+.hs .lbl{position:absolute;top:50px;left:50%;transform:translateX(-50%);white-space:nowrap;font:500 12px var(--sans);background:rgba(20,18,14,.78);color:#fff;padding:3px 9px;border-radius:99px;pointer-events:none;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:none}
+.hs.lnk:hover>.lbl{display:block}.hs.lnk.pop>.lbl,.hs.lnk.sel>.lbl{display:none}
+.hs-menu{position:absolute;top:100%;left:50%;transform:translateX(-50%);padding-top:8px;display:none;z-index:40;cursor:default;text-align:left}
+.hs-menu.up{top:auto;bottom:100%;padding-top:0;padding-bottom:8px}
+.hs-menu.l{left:0;transform:none}.hs-menu.r{left:auto;right:0;transform:none}
+.hs-menu .box{width:228px;max-height:250px;overflow:auto;background:var(--card);color:var(--ink);border:1px solid var(--line2);border-radius:12px;box-shadow:0 14px 34px rgba(30,18,4,.4)}
+.hs-menu .hd{display:flex;align-items:center;justify-content:space-between;padding:9px 8px 9px 14px;font:700 10.5px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--label);border-bottom:1px solid var(--line)}
+.hs-menu .hd .x{background:none;border:0;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:0 4px}.hs-menu .hd .x:hover{color:var(--ink)}
+.hs-menu .opt{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:none;border:0;color:var(--ink);font:500 13px var(--sans);text-align:left;cursor:pointer}
+.hs-menu .opt:hover,.hs-menu .opt:focus-visible{background:#f0e9db;outline:none}
+.hs-menu .opt .n{flex:0 0 auto;width:18px;color:var(--muted);font-size:11.5px}
+.hs-menu .opt .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hs-menu .opt.on{background:#f3ecdf}.hs-menu .opt.on::after{content:"✓";color:var(--good);flex:0 0 auto;font-weight:700}
+.hs-menu input.ti{display:block;width:calc(100% - 24px);margin:12px}
+.hs-menu .note{padding:0 14px 12px;font-size:11.5px;color:var(--muted)}
+.hs.lnk.pop>.hs-menu,.hs.info.sel>.hs-menu{display:block}
+@media (hover:none){.hs.lnk.sel>.hs-menu{display:block}}
+.hs.menu-closed>.hs-menu,.hs.dragging>.hs-menu{display:none!important}
+
+/* publish / details dialog */
+#modal{position:fixed;inset:0;background:rgba(40,28,10,.42);display:none;align-items:center;justify-content:center;z-index:40;padding:16px}
+#modal .card{background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:0 28px 70px rgba(40,25,5,.28);padding:28px 28px 22px;max-width:480px;width:100%;max-height:92vh;overflow:auto}
+#modal h3{margin:0 0 16px;text-align:center;font:italic 600 30px/1.1 var(--serif)}
+.modal-field{display:block;margin:0 0 7px;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--label)}
+#modal input[type=text]{width:100%}
+#modal .fh{margin:7px 0 0;font-size:12px}
+#modal p.err{margin:7px 0 0}
+#modal .mfoot{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:18px 0 0}
+#modal .mfoot .btn{width:100%;padding:15px 20px}
+#modal .mfoot #modal-x{border-color:transparent;background:none;color:var(--muted)}
+#modal .mfoot #modal-x:hover{color:var(--ink)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--btn-ink);padding:10px 18px;border-radius:99px;font-size:13px;display:none;z-index:50;max-width:90%}
+
+/* narrow screens: rail stays on the left as a slim thumbnail strip */
+@media (max-width:759px){
+  #app{grid-template-columns:100px minmax(0,1fr)}
+  header{padding:12px 14px 10px}header h1{font-size:23px}header .tag{display:none}
+  #sidebar{margin:0 0 12px 10px;padding:8px 6px;border-radius:16px}
+  #sidebar h2.sec,.hint,.price,.lw,.sinfo{display:none}
+  .addrow{margin-bottom:8px}.addrow .btn{width:100%;padding:10px 6px}
+  .scard{flex-direction:column;align-items:center;gap:2px;padding:4px 4px 6px}
+  .grip{width:auto;transform:rotate(90deg);height:12px}
+  .thumb{width:100%;height:auto;aspect-ratio:2/1}
+  #stagewrap{padding:0 10px}#stage{border-radius:16px}
+  #actions{gap:6px;padding:12px 10px 14px}
+  .abtn{flex:1 1 0;min-width:0;padding:11px 4px;font-size:10.5px;letter-spacing:.06em;flex-direction:column;gap:5px;text-align:center}
+  #modal .card{padding:22px 18px 18px}
+}
+
+</style>
 </head>
 <body>
+<div id="app">
+  <header>
+    <h1>Glow360</h1><span class="tag">Tour builder · prototype</span><span class="sp"></span>
+    <span class="muted" id="hstat"></span>
+    <button class="btn pri" id="publish" disabled>Publish · $100 + GST</button>
+  </header>
+
+  <aside id="sidebar" aria-label="Scenes">
+    <h2 class="sec">Scenes</h2>
+    <div class="row addrow"><button class="btn pri" id="add" aria-label="Add photo">＋<span class="lw"> Add photo</span></button><input type="file" id="file" accept="image/*" multiple hidden></div>
+    <div class="list" id="scene-list"></div>
+    <p class="muted price" id="price-note"></p>
+    <p class="muted hint">Drag to reorder. The first scene is where visitors start.</p>
+  </aside>
+
+  <div id="stagewrap">
+    <div id="stage">
+      <div id="pano"></div>
+      <div id="tourtitle"><b id="tt-name"></b><button id="tt-scene" class="scn" type="button" title="Rename this scene"><span id="tt-scene-t"></span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button></div>
+      <div id="empty">
+        <div style="font-size:34px" aria-hidden="true">◎</div>
+        <strong>Add a 360° photo to start</strong>
+        <p>Use an equirectangular (2:1) panorama from your camera, or try the demo scenes.</p>
+        <div class="row" style="justify-content:center;margin:0">
+          <button class="btn pri" id="empty-add">Add photo</button>
+          <button class="btn" id="empty-demo">Load 2 demo scenes</button>
+        </div>
+      </div>
+      <div id="status"><div id="prog" style="display:none"><div class="muted" id="prog-t"></div><div class="bar"><i id="prog-b"></i></div></div><p class="err" id="err" style="display:none"></p></div>
+      
+    </div>
+  </div>
+
+  <div id="actions" role="toolbar" aria-label="Hotspot tools">
+    <button class="abtn" id="b-info" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>Info hotspot</span></button>
+    <button class="abtn" id="b-link" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 13l4-4 4 4"/></svg><span>Link hotspot</span></button>
+    <button class="abtn" id="b-start" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span><span class="lw">Set </span>initial view</span></button>
+  </div>
+</div>
+
+<div id="modal" role="dialog" aria-modal="true"><div class="card"><h3 id="modal-t"></h3><div id="modal-b"></div><div class="mfoot"><button class="btn pri" id="modal-go" style="display:none"></button><button class="btn" id="modal-x">Close</button></div></div></div>
+<div id="toast" role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marzipano/0.10.2/marzipano.js"></script>
+<script>
+/* ===== core.js : pure functions (no DOM) — tested in Node against Marzipano's own geometry ===== */
+var G360 = (function () {
+  var FACE_ROT = {
+    f: { x: 0, y: 0 }, b: { x: 0, y: Math.PI }, l: { x: 0, y: Math.PI / 2 },
+    r: { x: 0, y: -Math.PI / 2 }, u: { x: Math.PI / 2, y: 0 }, d: { x: -Math.PI / 2, y: 0 }
+  };
+  var FACES = ['f', 'b', 'l', 'r', 'u', 'd'];
+  // Preview strip order. Matches Marzipano ImageUrlSource default ('bdflru').
+  var PREVIEW_ORDER = 'bdflru';
+
+  // World direction for point (a,b) on a face; a = right (-.5...5), b = up (-.5...5).
+  // Mirrors Marzipano CubeTile.vertices(): (a,b,-0.5) rotated X then Y (gl-matrix conventions).
+  function faceDir(face, a, b, out) {
+    var r = FACE_ROT[face], cx = Math.cos(r.x), sx = Math.sin(r.x), cy = Math.cos(r.y), sy = Math.sin(r.y);
+    var x = a, y = b, z = -0.5;
+    var y1 = y * cx - z * sx, z1 = y * sx + z * cx;           // rotateX
+    var x2 = z1 * sy + x * cy, z2 = z1 * cy - x * sy;         // rotateY
+    out[0] = x2; out[1] = y1; out[2] = z2;
+    return out;
+  }
+
+  // Equirect lookup coordinates (0..1) for a world direction.
+  // Image centre = yaw 0 (front), right = +yaw, top = up.
+  function dirToUV(x, y, z, out) {
+    var len = Math.sqrt(x * x + y * y + z * z);
+    var yaw = Math.atan2(x, -z);
+    var lat = Math.asin(y / len);
+    out[0] = 0.5 + yaw / (2 * Math.PI);
+    out[1] = 0.5 - lat / Math.PI;
+    return out;
+  }
+
+  // Marzipano view angles for a world direction (pitch: positive = DOWN in Marzipano).
+  function dirToYawPitch(x, y, z) {
+    var len = Math.sqrt(x * x + y * y + z * z);
+    return { yaw: Math.atan2(x, -z), pitch: -Math.asin(y / len) };
+  }
+
+  // Bilinear sample (RGBA) from equirect pixel array; wraps horizontally, clamps vertically.
+  function sample(src, W, H, u, v, out) {
+    var fx = u * W - 0.5, fy = v * H - 0.5;
+    var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    var y1 = y0 + 1; if (y0 < 0) y0 = 0; if (y1 < 0) y1 = 0; if (y0 > H - 1) y0 = H - 1; if (y1 > H - 1) y1 = H - 1;
+    var xa = ((x0 % W) + W) % W, xb = (((x0 + 1) % W) + W) % W;
+    var i00 = (y0 * W + xa) * 4, i10 = (y0 * W + xb) * 4, i01 = (y1 * W + xa) * 4, i11 = (y1 * W + xb) * 4;
+    for (var c = 0; c < 3; c++) {
+      var top = src[i00 + c] * (1 - tx) + src[i10 + c] * tx;
+      var bot = src[i01 + c] * (1 - tx) + src[i11 + c] * tx;
+      out[c] = top * (1 - ty) + bot * ty;
+    }
+  }
+
+  // Fill rows [r0, r1) of an F×F face into `dst` (RGBA Uint8ClampedArray, F*F*4).
+  function renderFaceRows(src, W, H, face, F, r0, r1, dst) {
+    var d = [0, 0, 0], uv = [0, 0], px = [0, 0, 0];
+    for (var py = r0; py < r1; py++) {
+      var b = 0.5 - (py + 0.5) / F;
+      for (var pxi = 0; pxi < F; pxi++) {
+        var a = (pxi + 0.5) / F - 0.5;
+        faceDir(face, a, b, d);
+        dirToUV(d[0], d[1], d[2], uv);
+        sample(src, W, H, uv[0], uv[1], px);
+        var o = (py * F + pxi) * 4;
+        dst[o] = px[0]; dst[o + 1] = px[1]; dst[o + 2] = px[2]; dst[o + 3] = 255;
+      }
+    }
+  }
+
+  // Same level list shape the Marzipano Tool exports.
+  function buildLevels(faceSize) {
+    var levels = [{ tileSize: 256, size: 256, fallbackOnly: true }];
+    for (var s = 512; s <= faceSize; s *= 2) levels.push({ tileSize: 512, size: s });
+    return levels;
+  }
+
+  // Largest power of two <= min(cap, srcWidth/4), min 512.
+  function pickFaceSize(srcWidth, cap) {
+    var target = Math.min(cap, Math.floor(srcWidth / 4)), s = 512;
+    while (s * 2 <= target) s *= 2;
+    return s;
+  }
+
+  // Aspect-aware vertical FOV: keep a minimum horizontal FOV on tall (portrait) screens.
+  // Marzipano's `fov` is the VERTICAL fov, so a fixed value gives a narrow slice in portrait.
+  function aspectFov(width, height, baseVfov, minHfov, maxVfov) {
+    var aspect = width / height;
+    var hfov = 2 * Math.atan(Math.tan(baseVfov / 2) * aspect);
+    if (hfov >= minHfov) return baseVfov;
+    var v = 2 * Math.atan(Math.tan(minHfov / 2) / aspect);
+    return Math.min(v, maxVfov);
+  }
+
+  // Live engine path: <slug>/app-files/<sceneId>/<z>/<f>/<y>/<x>.jpg  (no 'tiles/' folder)
+  function tileKey(sceneId, z, f, y, x) { return sceneId + '/' + z + '/' + f + '/' + y + '/' + x + '.jpg'; }
+
+  // Escape for HTML text / attribute contexts.
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // Serialise data.js safely: JSON, with characters that can break out of <script> escaped.
+  function serializeData(data) {
+    var json = JSON.stringify(data, null, 2)
+      .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
+      .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+    return 'window.APP_DATA = ' + json + ';\n';
+  }
+
+
+  // Listing link: optional. Accepts "trademe.co.nz/x" (adds https://), rejects javascript:, data:, credentials, spaces.
+  function normalizeListingUrl(input) {
+    var s = String(input == null ? '' : input).trim();
+    if (!s) return { ok: true, value: '' };
+    if (s.length > 500) return { ok: false, error: 'That link is too long.' };
+    if (/\s/.test(s)) return { ok: false, error: 'The link contains spaces. Paste it again from the listing page.' };
+    if (!/^[a-z][a-z0-9+.\-]*:/i.test(s)) s = 'https://' + s.replace(/^\/+/, '');
+    var u;
+    try { u = new URL(s); } catch (e) { return { ok: false, error: 'That does not look like a valid link.' }; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, error: 'The link must start with https:// or http://' };
+    if (u.username || u.password) return { ok: false, error: 'The link must not contain a username or password.' };
+    if (u.hostname.indexOf('.') < 1) return { ok: false, error: 'That does not look like a valid website address.' };
+    return { ok: true, value: u.href };
+  }
+
+  // Property address = tour title. Plain text, 5-120 chars.
+  function validateAddress(input) {
+    var v = String(input == null ? '' : input).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!v) return { ok: false, error: 'Enter the property address.' };
+    if (v.length < 5) return { ok: false, error: 'That address looks too short.' };
+    if (v.length > 120) return { ok: false, error: 'Please keep the address under 120 characters.' };
+    if (!/[a-z]/i.test(v)) return { ok: false, error: 'The address should include a street name.' };
+    return { ok: true, value: v, warn: /\d/.test(v) ? '' : 'Tip: include the street number.' };
+  }
+
+  // Camera filenames (IMG_20260915_165304_00_merged) make poor scene names.
+  function defaultSceneName(fileName, n) {
+    var base = String(fileName || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+    if (!base || /\d{6,}/.test(base) || /merged|stitched/i.test(base)) return 'Scene ' + n;
+    return base.slice(0, 60);
+  }
+
+  // Pricing: $10 + GST per scene (image). 1 to 15 scenes. Amounts are integer cents; NZ GST 15% (confirm with accountant).
+  var PRICING = { perSceneCents: 1000, gstRate: 0.15, minScenes: 1, maxScenes: 15, currency: 'NZD' };
+  function priceFor(n) {
+    n = Math.floor(Number(n));
+    var subtotal = n * PRICING.perSceneCents, gst = Math.round(subtotal * PRICING.gstRate);
+    return { scenes: n, unit: PRICING.perSceneCents, subtotal: subtotal, gst: gst, total: subtotal + gst };
+  }
+  function validateSceneCount(n) {
+    n = Number(n);
+    if (!isFinite(n) || n < PRICING.minScenes) return { ok: false, error: 'Add at least ' + PRICING.minScenes + ' scene.' };
+    if (n > PRICING.maxScenes) return { ok: false, error: 'A tour can have at most ' + PRICING.maxScenes + ' scenes.' };
+    return { ok: true };
+  }
+  function fmtMoney(cents) { return '$' + (cents / 100).toFixed(cents % 100 ? 2 : 0); }
+
+  function slugify(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '') || 'scene';
+  }
+
+  return { FACES: FACES, FACE_ROT: FACE_ROT, PREVIEW_ORDER: PREVIEW_ORDER, faceDir: faceDir, dirToUV: dirToUV,
+    dirToYawPitch: dirToYawPitch, sample: sample, renderFaceRows: renderFaceRows, buildLevels: buildLevels,
+    pickFaceSize: pickFaceSize, aspectFov: aspectFov, tileKey: tileKey, PRICING: PRICING, priceFor: priceFor, validateSceneCount: validateSceneCount, fmtMoney: fmtMoney, normalizeListingUrl: normalizeListingUrl, validateAddress: validateAddress, defaultSceneName: defaultSceneName, esc: esc, serializeData: serializeData, slugify: slugify };
+})();
+
+
+</script>
 <script>
 /* ===== api.js : talks to the real Edge Functions (create-order, upload-urls, finalize). =====
  * Pure-ish module: no DOM access, every function takes explicit args and returns a plain result
@@ -111,6 +475,7 @@ var G360Api = (function () {
 
   return { createOrder: createOrder, requestUploadUrls: requestUploadUrls, uploadToR2: uploadToR2, finalize: finalize, pollOrder: pollOrder };
 })();
+
 </script>
 <script>
 /* ===== draft.js : IndexedDB persistence for a tour-in-progress. =====
@@ -508,6 +873,604 @@ var G360Draft = (function () {
   api.selfTest = selfTest;
   return api;
 })();
+
+</script>
+<script>
+(function () {
+'use strict';
+var G = G360;
+var $ = function (id) { return document.getElementById(id); };
+var LIMITS = { scenes: G.PRICING.maxScenes, bytes: 200 * 1024 * 1024 };
+
+var state = { scenes: [], cur: -1, pending: null, portrait: false, aspect: true, auto: true, busy: false, nextId: 0, sel: null, details: { address: '', url: '' } };
+var viewer = null, autorotate = null;
+
+/* ---------- helpers ---------- */
+function toast(msg) { var t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(function () { t.style.display = 'none'; }, 2600); }
+function clean(s, n) { return String(s).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, n); }
+function fmtMB(b) { return (b / 1048576).toFixed(b > 10485760 ? 0 : 1) + ' MB'; }
+function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
+function toBlob(c, type, q) { return new Promise(function (res, rej) { c.toBlob(function (b) { b ? res(b) : rej(new Error('Encoding failed')); }, type, q); }); }
+function mkCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function r4(n) { return Math.round(n * 10000) / 10000; }
+function curScene() { return state.scenes[state.cur] || null; }
+
+/* ---------- viewer ---------- */
+function ensureViewer() {
+  if (viewer) return true;
+  try {
+    viewer = new Marzipano.Viewer($('pano'), { controls: { mouseViewMode: 'drag', scrollZoom: false } });
+    try { viewer.controls().disableMethod('pinch'); } catch (e) {}   // no zoom: no scroll-wheel, no pinch
+    autorotate = Marzipano.autorotate({ yawSpeed: 0.03, targetPitch: 0, targetFov: null });
+    syncAutorotate();
+    return true;
+  } catch (e) {
+    showErr('This browser could not start WebGL, which the 360° viewer needs.');
+    return false;
+  }
+}
+
+function syncAutorotate() {
+  if (!viewer) return;
+  if (state.auto && !state.sel) { viewer.startMovement(autorotate); viewer.setIdleMovement(3000, autorotate); }
+  else { viewer.stopMovement(); viewer.setIdleMovement(Infinity); }
+}
+function updateTitle() {
+  var s = curScene();
+  var tn = $('tt-name'), a = clean(state.details.address, 120); tn.textContent = a || 'Your property address'; tn.className = a ? '' : 'dim';
+  $('tt-scene-t').textContent = s ? s.name : ''; $('tt-scene').style.display = s ? '' : 'none';
+}
+
+function LocalSource(scene) { this.s = scene; }
+LocalSource.prototype.loadAsset = function (stage, tile, done) {
+  // NOTE: tiles are handed to WebGL as <canvas> elements, not ImageBitmaps. Marzipano sets
+  // UNPACK_FLIP_Y, which WebGL ignores for ImageBitmap sources (tiles would render upside-down).
+  var s = this.s, cancelled = false, p;
+  if (tile.z === 0) p = Promise.resolve(s.fallback[tile.face]);
+  else {
+    var blob = s.tiles.get(G.tileKey(s.id, tile.z, tile.face, tile.y, tile.x));
+    p = blob ? createImageBitmap(blob).then(function (bmp) {
+      var c = mkCanvas(bmp.width, bmp.height); c.getContext('2d').drawImage(bmp, 0, 0);
+      try { bmp.close(); } catch (e) {} return c;
+    }) : Promise.reject(new Error('missing tile'));
+  }
+  p.then(function (el) {
+    if (cancelled) return;
+    var asset = new Marzipano.StaticAsset(el);
+    if (tile.z !== 0) { var d = asset.destroy; asset.destroy = function () { try { el.width = 0; } catch (e) {} d.apply(this, arguments); }; }
+    done(null, tile, asset);
+  }).catch(function (e) { if (!cancelled) done(e); });
+  return function cancel() { cancelled = true; done.apply(null, arguments); };
+};
+
+function stageSize() { var p = $('pano'); return { w: p.clientWidth || 1, h: p.clientHeight || 1 }; }
+var MAX_VFOV = 100 * Math.PI / 180, MAX_HFOV = 120 * Math.PI / 180;
+// Zoom is locked at the widest ("fully zoomed out") view: at most 100° vertical and 120° horizontal.
+// Wide screens are held by the horizontal limit, tall (portrait) screens by the vertical one.
+// Marzipano's fov is the vertical field of view.
+function fixedFov() {
+  var z = stageSize();
+  return Math.min(MAX_VFOV, 2 * Math.atan(Math.tan(MAX_HFOV / 2) * z.h / z.w));
+}
+function fixedFovLimiter() {
+  return function (p) {
+    p.fov = fixedFov();
+    p.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, p.pitch));
+    return p;
+  };
+}
+function startParams(s) { return { yaw: s.start.yaw, pitch: s.start.pitch, fov: fixedFov() }; }
+
+function buildMz(s) {
+  var geometry = new Marzipano.CubeGeometry(s.levels);
+  var view = new Marzipano.RectilinearView(startParams(s), fixedFovLimiter());
+  var scene = viewer.createScene({ source: new LocalSource(s), geometry: geometry, view: view, pinFirstLevel: true });
+  s.mz = { scene: scene, view: view, hs: [] };
+  renderHotspots(s);
+}
+
+function showScene(i, instant) {
+  var s = state.scenes[i]; if (!s || !s.mz) return;
+  if (state.sel) clearSel();
+  state.cur = i;
+  s.mz.view.setParameters(startParams(s));
+  s.mz.scene.switchTo({ transitionDuration: instant ? 0 : 500 });
+  $('empty').style.display = 'none';
+  renderScenes(); syncPublish(); updateTitle(); syncAutorotate();
+}
+
+/* ---------- hotspots ---------- */
+function findScene(id) { return state.scenes.filter(function (x) { return x.id === id; })[0]; }
+function hsRec(s, obj) { return s.mz && s.mz.hs.filter(function (r) { return r.obj === obj; })[0]; }
+
+function svgEl(w, paths, stroke, sw) {
+  var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', w); svg.setAttribute('height', w); svg.setAttribute('fill', 'none'); svg.setAttribute('aria-hidden', 'true');
+  paths.forEach(function (d) { var p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('stroke', stroke); p.setAttribute('stroke-width', sw); p.setAttribute('stroke-linecap', 'round'); p.setAttribute('stroke-linejoin', 'round'); svg.appendChild(p); });
+  return svg;
+}
+// Same arrow as the live tours (style.css / app.js): points up, centred in a 24 box.
+function arrowUp() { return svgEl('16', ['M4 12 L12 4 L20 12 M12 4 V20'], '#001a1f', '2.5'); }
+function toolBtn(cls, label, paths, onClick) {
+  var b = document.createElement('button'); b.type = 'button'; b.className = 'tool ' + cls; b.title = label; b.setAttribute('aria-label', label);
+  b.appendChild(svgEl('14', paths, 'currentColor', '2'));
+  b.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+  return b;
+}
+var PENCIL = ['M17 3a2.83 2.83 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z'];
+var GOTO = ['M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4', 'M10 17l5-5-5-5', 'M15 12H3'];
+var TRASH = ['M3 6h18', 'M8 6V4h8v2', 'M19 6l-1 14H6L5 6', 'M10 11v6', 'M14 11v6'];
+
+function renderHotspots(s) {
+  if (!s.mz) return;
+  var cont = s.mz.scene.hotspotContainer();
+  s.mz.hs.forEach(function (r) { try { cont.destroyHotspot(r.h); } catch (e) {} });
+  s.mz.hs = [];
+  function build(type, obj, ariaLabel) {
+    var b = document.createElement('div'); b.className = 'hs ' + (type === 'link' ? 'lnk' : 'info'); b.setAttribute('role', 'button'); b.tabIndex = 0; b.setAttribute('aria-label', ariaLabel);
+    var mk = document.createElement('span'); mk.className = 'mk';
+    if (type === 'link') mk.appendChild(arrowUp()); else mk.textContent = 'i';
+    b.appendChild(mk);
+    var rec = { obj: obj, type: type, el: b };
+    b.appendChild(toolBtn('t-edit', type === 'link' ? 'Change linked scene' : 'Edit title', PENCIL, function () { openTool(s, rec); }));
+    if (type === 'link') b.appendChild(toolBtn('t-go', 'Go to linked scene', GOTO, function () {
+      var t = findScene(obj.target); if (t) showScene(state.scenes.indexOf(t));
+    }));
+    b.appendChild(toolBtn('t-del', 'Delete hotspot', TRASH, function () { removeHotspot(obj); }));
+    var menu = document.createElement('div'); menu.className = 'hs-menu'; var box = document.createElement('div'); box.className = 'box'; menu.appendChild(box); b.appendChild(menu);
+    rec.menu = menu; rec.box = box;
+    return rec;
+  }
+  s.links.forEach(function (l) {
+    var t = findScene(l.target); if (!t) return;
+    var rec = build('link', l, 'Link to ' + t.name);
+    var lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = t.name; rec.el.appendChild(lbl); rec.lbl = lbl;
+    rec.h = cont.createHotspot(rec.el, { yaw: l.yaw, pitch: l.pitch });
+    var pe = rec.el.querySelector('.t-edit');
+    pe.addEventListener('mouseenter', function () { rec.el.classList.remove('menu-closed'); prepMenu(s, rec); rec.el.classList.add('pop'); });
+    rec.el.addEventListener('mouseleave', function () { rec.el.classList.remove('menu-closed', 'pop'); });
+    rec.el.addEventListener('keydown', function (e) { if (e.target === rec.el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(l, 'link'); openTool(s, rec); } });
+    s.mz.hs.push(rec); wireHs(s, rec);
+  });
+  s.infos.forEach(function (n) {
+    var rec = build('info', n, n.title || 'Info');
+    rec.h = cont.createHotspot(rec.el, { yaw: n.yaw, pitch: n.pitch });
+    rec.el.addEventListener('keydown', function (e) { if (e.target === rec.el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(n, 'info'); } });
+    s.mz.hs.push(rec); wireHs(s, rec);
+  });
+  markSelected();
+}
+
+// Pencil tool: link -> scene list; info -> title box.
+function openTool(s, rec) {
+  if (rec.type === 'link') { select(rec.obj, 'link'); rec.el.classList.remove('menu-closed'); prepMenu(s, rec); rec.el.classList.add('pop'); }
+  else { select(rec.obj, 'info'); }
+}
+
+function menuHead(text, onClose) {
+  var hd = document.createElement('div'); hd.className = 'hd'; var t = document.createElement('span'); t.textContent = text; hd.appendChild(t);
+  var x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.setAttribute('aria-label', 'Close'); x.textContent = '×'; x.addEventListener('click', function (e) { e.stopPropagation(); onClose(); }); hd.appendChild(x);
+  return hd;
+}
+// Info marker: a title box (the live tour shows the title as a hover tooltip).
+function fillInfo(s, rec) {
+  var box = rec.box; box.textContent = '';
+  box.appendChild(menuHead('Title', function () { clearSel(); }));
+  var inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 60; inp.placeholder = 'Title (required)'; inp.value = rec.obj.title || ''; inp.setAttribute('aria-label', 'Info title'); inp.className = 'ti';
+  inp.addEventListener('input', function () { rec.obj.title = clean(inp.value, 60); rec.el.setAttribute('aria-label', rec.obj.title || 'Info'); });
+  inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); if (!rec.obj.title) return toast('Give the info point a title'); clearSel(); } });
+  ['pointerdown', 'mousedown', 'touchstart'].forEach(function (n) { inp.addEventListener(n, function (e) { e.stopPropagation(); }); });
+  box.appendChild(inp);
+  var h = document.createElement('div'); h.className = 'note'; h.textContent = 'Visitors see this when they hover the marker.'; box.appendChild(h);
+  if (!rec.obj.title) setTimeout(function () { inp.focus(); }, 30);
+}
+
+// Hover menu on a link hotspot: scenes listed by name, in tour order.
+function prepMenu(s, rec) {
+  if (!rec.menu) return;
+  var box = rec.box; box.textContent = '';
+  box.appendChild(menuHead('Select target scene', function () { rec.el.classList.remove('pop'); rec.el.classList.add('menu-closed'); }));
+  state.scenes.forEach(function (x, i) {
+    if (x === s) return;
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'opt' + (x.id === rec.obj.target ? ' on' : '');
+    var n = document.createElement('span'); n.className = 'n'; n.textContent = String(i + 1);
+    var t = document.createElement('span'); t.className = 't'; t.textContent = x.name;
+    b.appendChild(n); b.appendChild(t);
+    b.addEventListener('click', function (e) { e.stopPropagation(); pickTarget(s, rec, x); });
+    box.appendChild(b);
+  });
+  // keep the menu inside the panorama: flip up near the bottom, align to an edge near the sides
+  var m = rec.menu; m.classList.remove('up', 'l', 'r');
+  var pr = $('pano').getBoundingClientRect(), r = rec.el.getBoundingClientRect();
+  var h = Math.min(250, 40 + (state.scenes.length - 1) * 38) + 16, cx = r.left + r.width / 2;
+  if (r.bottom + h > pr.bottom && r.top - h > pr.top) m.classList.add('up');
+  if (cx - 116 < pr.left) m.classList.add('l'); else if (cx + 116 > pr.right) m.classList.add('r');
+}
+function pickTarget(s, rec, t) {
+  rec.obj.target = t.id; rec.lbl.textContent = t.name; rec.el.setAttribute('aria-label', 'Link to ' + t.name);
+  rec.el.classList.remove('pop'); rec.el.classList.add('menu-closed');
+  prepMenu(s, rec); renderScenes(); syncPublish();
+}
+
+// Click a hotspot to edit it; drag it to move it.
+function wireHs(s, rec) {
+  var el = rec.el;
+  ['mousedown', 'touchstart', 'wheel'].forEach(function (n) { el.addEventListener(n, function (e) { e.stopPropagation(); }, { passive: true }); });
+  el.addEventListener('pointerdown', function (e) {
+    e.stopPropagation(); if (e.button > 0) return;
+    if (e.target.closest && e.target.closest('.hs-menu, .tool')) return;
+    var d = { x: e.clientX, y: e.clientY, moved: false };
+    try { el.setPointerCapture(e.pointerId); } catch (x) {}
+    function mv(ev) {
+      if (!d.moved && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 5) return;
+      d.moved = true; select(rec.obj, rec.type); el.classList.add('dragging');
+      var r = $('pano').getBoundingClientRect();
+      var c = s.mz.view.screenToCoordinates({ x: ev.clientX - r.left, y: ev.clientY - r.top });
+      rec.obj.yaw = r4(c.yaw); rec.obj.pitch = r4(c.pitch); rec.h.setPosition({ yaw: rec.obj.yaw, pitch: rec.obj.pitch });
+    }
+    function up() {
+      el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+      try { el.releasePointerCapture(e.pointerId); } catch (x) {}
+      el.classList.remove('dragging');
+      if (!d.moved) { select(rec.obj, rec.type); el.classList.remove('menu-closed'); if (rec.type === 'link') prepMenu(s, rec); }
+    }
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  });
+}
+
+function markSelected() {
+  var s = curScene(); if (!s || !s.mz) return;
+  s.mz.hs.forEach(function (r) { r.el.classList.toggle('sel', !!state.sel && r.obj === state.sel.obj); });
+}
+
+function select(obj, type) {
+  if (state.sel && state.sel.obj === obj) return;
+  if (state.sel) clearSel();
+  state.sel = { obj: obj, type: type };
+  var cs = curScene(), rr = cs && hsRec(cs, obj); if (rr) { if (rr.type === 'link') prepMenu(cs, rr); else fillInfo(cs, rr); }
+  markSelected(); syncAutorotate();
+}
+
+function removeHotspot(obj) {
+  var s = curScene(); if (!s) return;
+  s.links = s.links.filter(function (l) { return l !== obj; }); s.infos = s.infos.filter(function (n) { return n !== obj; });
+  if (state.sel && state.sel.obj === obj) { state.sel = null; syncAutorotate(); }
+  renderHotspots(s); renderScenes(); syncPublish();
+}
+
+function clearSel() {
+  if (!state.sel) return;
+  var sel = state.sel; state.sel = null;
+  var cs0 = curScene(), r0 = cs0 && hsRec(cs0, sel.obj); if (r0) r0.el.classList.remove('pop');
+  if (sel.type === 'info' && !String(sel.obj.title || '').trim()) {           // untitled info point is discarded
+    var s = curScene(); if (s) { s.infos = s.infos.filter(function (n) { return n !== sel.obj; }); renderHotspots(s); }
+  }
+  markSelected(); syncAutorotate(); renderScenes(); syncPublish();
+}
+
+function addLink() {
+  var s = curScene(); if (!s || !s.mz) return toast('Add a scene first');
+  if (state.scenes.length < 2) return toast('Add a second scene to link to');
+  var others = state.scenes.filter(function (x) { return x !== s; }), i = state.scenes.indexOf(s);
+  var def = state.scenes[i + 1] || others[0];
+  var l = { yaw: r4(s.mz.view.yaw()), pitch: r4(s.mz.view.pitch()), target: def.id };
+  s.links.push(l); renderHotspots(s); select(l, 'link'); var rc = hsRec(s, l); if (rc) { prepMenu(s, rc); rc.el.classList.add('pop'); } renderScenes(); syncPublish();
+}
+function addInfo() {
+  var s = curScene(); if (!s || !s.mz) return toast('Add a scene first');
+  var n = { yaw: r4(s.mz.view.yaw()), pitch: r4(s.mz.view.pitch()), title: '', text: '' };
+  s.infos.push(n); renderHotspots(s); select(n, 'info');
+}
+
+function onPanoTap() { if (state.sel) clearSel(); }
+
+/* ---------- tiling ---------- */
+function setProgress(text, frac) {
+  $('prog').style.display = text ? 'block' : 'none';
+  $('prog-t').textContent = text || ''; $('prog-b').style.width = Math.round((frac || 0) * 100) + '%';
+}
+function showErr(m) { var e = $('err'); e.textContent = m || ''; e.style.display = m ? 'block' : 'none'; }
+
+async function tileScene(file, idx, total, cap, uid) {
+  var label = 'Scene ' + (idx + 1) + '/' + total + ': ';
+  var bmp = await createImageBitmap(file);
+  var ratio = bmp.width / bmp.height, origW = bmp.width;
+  if (Math.abs(ratio - 2) > 0.03) { bmp.close(); throw new Error('"' + (file.name || 'image') + '" is ' + bmp.width + '×' + bmp.height + '. Needs a 2:1 equirectangular panorama.'); }
+  if (bmp.width < 2048) { bmp.close(); throw new Error('Image is too small (' + bmp.width + ' px wide). Use at least 2048 px.'); }
+  var F = G.pickFaceSize(bmp.width, cap);
+  var W = Math.min(bmp.width, 4 * F), H = Math.round(W / 2);
+  setProgress(label + 'reading image…', 0);
+  var sc = mkCanvas(W, H), sctx = sc.getContext('2d', { willReadFrequently: true });
+  sctx.imageSmoothingQuality = 'high'; sctx.drawImage(bmp, 0, 0, W, H); bmp.close();
+  var src = sctx.getImageData(0, 0, W, H).data;
+  var thumb = mkCanvas(192, 96); thumb.getContext('2d').drawImage(sc, 0, 0, 192, 96); sc.width = 0;
+
+  var levels = G.buildLevels(F), sizes = levels.map(function (l) { return l.size; });
+  var id = uid + '-' + G.slugify((file.name || 'scene').replace(/\.[^.]+$/, ''));
+  var tiles = new Map(), fallbackCanvases = {}, bytes = 0, files = 0, CH = 48;
+
+  for (var fi = 0; fi < G.FACES.length; fi++) {
+    var face = G.FACES[fi];
+    var fc = mkCanvas(F, F), fctx = fc.getContext('2d'), img = fctx.createImageData(F, F);
+    for (var r = 0; r < F; r += CH) {
+      G.renderFaceRows(src, W, H, face, F, r, Math.min(F, r + CH), img.data);
+      setProgress(label + 'face ' + (fi + 1) + '/6', (fi + r / F) / 6 * 0.85);
+      await tick();
+    }
+    fctx.putImageData(img, 0, 0);
+    // downscale ladder (halving keeps quality)
+    var ladder = {}; ladder[F] = fc; var prev = fc;
+    for (var s = F / 2; s >= 256; s /= 2) {
+      var c2 = mkCanvas(s, s), x2 = c2.getContext('2d'); x2.imageSmoothingQuality = 'high'; x2.drawImage(prev, 0, 0, s, s); ladder[s] = c2; prev = c2;
+    }
+    fallbackCanvases[face] = ladder[256];
+    for (var z = 1; z < levels.length; z++) {
+      var size = sizes[z], n = size / 512, lc = ladder[size];
+      for (var ty = 0; ty < n; ty++) for (var tx = 0; tx < n; tx++) {
+        var tc = mkCanvas(512, 512); tc.getContext('2d').drawImage(lc, tx * 512, ty * 512, 512, 512, 0, 0, 512, 512);
+        var blob = await toBlob(tc, 'image/jpeg', 0.85); tc.width = 0;
+        tiles.set(G.tileKey(id, z, face, ty, tx), blob); bytes += blob.size; files++;
+      }
+      await tick();
+    }
+    Object.keys(ladder).forEach(function (k) { if (ladder[k] !== ladder[256]) ladder[k].width = 0; });
+  }
+  setProgress(label + 'building preview…', 0.92);
+  var pc = mkCanvas(256, 256 * 6), pctx = pc.getContext('2d'), fallback;
+  for (var i = 0; i < 6; i++) { var f2 = G.PREVIEW_ORDER[i]; pctx.drawImage(fallbackCanvases[f2], 0, i * 256); }
+  fallback = fallbackCanvases;
+  var previewBlob = await toBlob(pc, 'image/jpeg', 0.85); pc.width = 0;
+  tiles.set(id + '/preview.jpg', previewBlob); bytes += previewBlob.size; files++;
+
+  var name = G.defaultSceneName(file.name, state.scenes.length + 1);
+  return { id: id, thumb: thumb, name: name, faceSize: F, srcWidth: origW, capped: F < cap, levels: levels, tiles: tiles, fallback: fallback, bytes: bytes, files: files,
+    start: { yaw: 0, pitch: 0, fov: MAX_VFOV }, links: [], infos: [], mz: null };
+}
+
+async function addFiles(files) {
+  if (state.busy || !files.length) return;
+  if (!ensureViewer()) return;
+  if (state.scenes.length + files.length > LIMITS.scenes) { showErr('A tour can have at most ' + LIMITS.scenes + ' scenes (' + G.fmtMoney(G.priceFor(LIMITS.scenes).subtotal) + ' + GST).'); return; }
+  showErr(''); state.busy = true; setBusy();
+  var cap = 2048, added = 0;
+  try {
+    for (var i = 0; i < files.length; i++) {
+      var s = await tileScene(files[i], i, files.length, cap, state.nextId++);
+      state.scenes.push(s); buildMz(s); added++;
+      if (state.cur < 0) showScene(state.scenes.length - 1, true); else { renderScenes(); syncPublish(); }
+    }
+    toast(added + (added === 1 ? ' scene' : ' scenes') + ' ready');
+  } catch (e) { console.error(e); showErr(e.message || String(e)); }
+  state.busy = false; setBusy(); setProgress('');
+}
+function setBusy() { ['add', 'empty-add', 'empty-demo'].forEach(function (id) { $(id).disabled = state.busy; }); }
+
+/* ---------- demo panoramas (procedural 2:1 equirect) ---------- */
+async function demoFile(kind) {
+  var W = 4096, H = 2048, c = mkCanvas(W, H), x = c.getContext('2d');
+  var pal = kind === 0 ? ['#7dc3e8', '#eaf6ff', '#b58a5a', '#5b4128', '#0f766e'] : ['#f2b880', '#fff1dd', '#7fa47f', '#35533a', '#b45309'];
+  var g = x.createLinearGradient(0, 0, 0, H / 2); g.addColorStop(0, pal[0]); g.addColorStop(1, pal[1]); x.fillStyle = g; x.fillRect(0, 0, W, H / 2);
+  var g2 = x.createLinearGradient(0, H / 2, 0, H); g2.addColorStop(0, pal[2]); g2.addColorStop(1, pal[3]); x.fillStyle = g2; x.fillRect(0, H / 2, W, H / 2);
+  x.lineWidth = 3;
+  for (var yaw = -180; yaw < 180; yaw += 15) {
+    var px = W * (0.5 + yaw / 360), major = yaw % 45 === 0;
+    x.strokeStyle = major ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.18)'; x.beginPath(); x.moveTo(px, 0); x.lineTo(px, H); x.stroke();
+    if (major) { x.fillStyle = '#000'; x.font = 'bold 44px system-ui,sans-serif'; x.textAlign = 'center'; x.fillText(yaw + '°', px, H / 2 + 120); x.fillText(yaw + '°', px, H / 2 - 90); }
+  }
+  for (var lat = -75; lat <= 75; lat += 15) { var py = H * (0.5 - lat / 180); x.strokeStyle = lat === 0 ? 'rgba(0,0,0,.7)' : 'rgba(0,0,0,.18)'; x.lineWidth = lat === 0 ? 6 : 3; x.beginPath(); x.moveTo(0, py); x.lineTo(W, py); x.stroke(); }
+  var names = [['FRONT', 0], ['RIGHT', 90], ['BACK', 180], ['LEFT', -90]];
+  x.fillStyle = pal[4]; x.textAlign = 'center';
+  names.forEach(function (n) { var px = W * (0.5 + n[1] / 360); if (n[1] === 180) { [W * 0.0, W].forEach(function (p) { x.font = 'bold 110px system-ui,sans-serif'; x.fillText('BACK', p === 0 ? 150 : W - 150, H / 2 - 260); }); } else { x.font = 'bold 130px system-ui,sans-serif'; x.fillText(n[0], px, H / 2 - 250); } });
+  [[30, 200, 60], [-60, 260, 90], [130, 220, 50], [-140, 300, 110]].forEach(function (b, i) { var px = W * (0.5 + b[0] / 360); x.fillStyle = i % 2 ? pal[4] : 'rgba(30,30,30,.85)'; x.fillRect(px - b[2], H / 2 - b[1], b[2] * 2, b[1] + 160); });
+  x.fillStyle = '#000'; x.font = 'bold 90px system-ui,sans-serif'; x.fillText(kind === 0 ? 'ROOM A' : 'ROOM B', W / 2, H * 0.12); x.fillText('▲ ceiling', W / 2, H * 0.03 + 60); x.fillText('floor ▼', W / 2, H * 0.94);
+  var blob = await toBlob(c, 'image/jpeg', 0.9); c.width = 0;
+  return new File([blob], kind === 0 ? 'Room A.jpg' : 'Room B.jpg', { type: 'image/jpeg' });
+}
+
+/* ---------- rendering panels ---------- */
+function renderScenes() {
+  var box = $('scene-list'); box.textContent = '';
+  state.scenes.forEach(function (s, i) {
+    var d = document.createElement('div'); d.className = 'scard' + (i === state.cur ? ' cur' : ''); d.dataset.i = String(i);
+    d.setAttribute('role', 'button'); d.tabIndex = 0; d.setAttribute('aria-label', 'Scene ' + (i + 1) + ': ' + s.name);
+    var grip = document.createElement('span'); grip.className = 'grip'; grip.textContent = '⋮⋮'; grip.title = 'Drag to reorder'; d.appendChild(grip);
+    var th = document.createElement('div'); th.className = 'thumb';
+    var cv = mkCanvas(192, 96); if (s.thumb) cv.getContext('2d').drawImage(s.thumb, 0, 0); th.appendChild(cv);
+    var num = document.createElement('span'); num.className = 'num'; num.textContent = String(i + 1); th.appendChild(num);
+    var del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '×'; del.title = 'Delete scene'; del.setAttribute('aria-label', 'Delete scene ' + (i + 1)); del.addEventListener('click', function (e) { e.stopPropagation(); removeScene(i); }); th.appendChild(del); d.appendChild(th);
+    var info = document.createElement('div'); info.className = 'sinfo';
+    var nm = document.createElement('div'); nm.className = 'sname'; nm.textContent = s.name; info.appendChild(nm);
+    var m = document.createElement('div'); m.className = 'smeta' + (i === 0 ? ' start' : ''); m.textContent = (i === 0 ? 'Start · ' : '') + s.links.length + ' link' + (s.links.length === 1 ? '' : 's') + (s.capped ? ' · ' + s.faceSize + ' px' : ''); m.title = s.capped ? 'Limited by photo width (' + s.srcWidth + ' px)' : ''; info.appendChild(m);
+    d.appendChild(info);
+    d.addEventListener('click', function () { if (dragged) return; showScene(i); });
+    d.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showScene(i); }
+      else if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); moveScene(i, i - 1, true); }
+      else if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); moveScene(i, i + 1, true); }
+    });
+    box.appendChild(d);
+  });
+  $('hstat').textContent = state.scenes.length ? state.scenes.length + ' scene' + (state.scenes.length > 1 ? 's' : '') : '';
+}
+
+function moveScene(from, to, refocus) {
+  if (from === to || to < 0 || to >= state.scenes.length || from < 0) return;
+  var cur = curScene(), s = state.scenes.splice(from, 1)[0];
+  state.scenes.splice(to, 0, s); state.cur = state.scenes.indexOf(cur);
+  renderScenes(); syncPublish();
+  if (refocus) { var el = $('scene-list').children[to]; if (el) el.focus(); }
+}
+
+/* pointer-based drag to reorder (mouse anywhere on a card; touch via the grip) */
+var dragged = false;
+(function () {
+  var list = $('scene-list'), st = null;
+  list.addEventListener('pointerdown', function (e) {
+    var card = e.target.closest && e.target.closest('.scard');
+    if (!card || (e.target.closest && e.target.closest('button'))) return;
+    if (e.pointerType === 'touch' && !(e.target.closest && e.target.closest('.grip'))) return;
+    if (e.button != null && e.button > 0) return;
+    st = { card: card, from: +card.dataset.i, y0: e.clientY, active: false, to: +card.dataset.i, id: e.pointerId };
+    try { card.setPointerCapture(e.pointerId); } catch (x) {}
+  });
+  list.addEventListener('pointermove', function (e) {
+    if (!st) return;
+    var dy = e.clientY - st.y0;
+    if (!st.active) { if (Math.abs(dy) < 6) return; st.active = true; dragged = true; st.card.classList.add('dragging'); }
+    st.card.style.transform = 'translateY(' + dy + 'px)';
+    var cards = Array.prototype.slice.call(list.children), target = st.from, y = e.clientY;
+    cards.forEach(function (c, i) { c.classList.remove('drop-before', 'drop-after'); });
+    for (var i = 0; i < cards.length; i++) {
+      if (i === st.from) continue;
+      var r = cards[i].getBoundingClientRect(), mid = r.top + r.height / 2;
+      if (i < st.from && y < mid) { target = i; break; }
+      if (i > st.from && y > mid) target = i;
+    }
+    st.to = target;
+    if (target !== st.from) cards[target].classList.add(target < st.from ? 'drop-before' : 'drop-after');
+  });
+  function end(e) {
+    if (!st) return; var s = st; st = null;
+    try { s.card.releasePointerCapture(s.id); } catch (x) {}
+    if (s.active) { s.card.classList.remove('dragging'); s.card.style.transform = ''; moveScene(s.from, s.to); setTimeout(function () { dragged = false; }, 50); }
+  }
+  list.addEventListener('pointerup', end); list.addEventListener('pointercancel', end);
+})();
+
+function removeScene(i) {
+  var s = state.scenes[i]; if (!s) return;
+  if (state.sel) clearSel();
+  state.scenes.splice(i, 1);
+  state.scenes.forEach(function (o) { o.links = o.links.filter(function (l) { return l.target !== s.id; }); });
+  try { viewer.destroyScene(s.mz.scene); } catch (e) {}
+  state.scenes.forEach(renderHotspots);
+  if (!state.scenes.length) { state.cur = -1; $('empty').style.display = 'flex'; renderScenes(); syncPublish(); return; }
+  showScene(Math.min(i, state.scenes.length - 1), true);
+}
+
+function buildAppData() {
+  return {
+    scenes: state.scenes.map(function (s) {
+      return { id: s.id, name: s.name, levels: s.levels, faceSize: s.faceSize,
+        initialViewParameters: { yaw: r4(s.start.yaw), pitch: r4(s.start.pitch), fov: r4(s.start.fov) },
+        linkHotspots: s.links.map(function (l) { return { yaw: l.yaw, pitch: l.pitch, rotation: 0, target: l.target }; }),
+        infoHotspots: s.infos.map(function (n) { return { yaw: n.yaw, pitch: n.pitch, title: n.title, text: n.text }; }) };
+    }),
+    name: (G.validateAddress(state.details.address).value || 'Untitled tour'),
+    settings: (function () {
+      var st = { mouseViewMode: 'drag', autorotateEnabled: true, fullscreenButton: false, viewControlButtons: false };
+      var u = G.normalizeListingUrl(state.details.url); if (u.ok && u.value) st.listingUrl = u.value;
+      return st;
+    })()
+  };
+}
+
+function totals() { var b = 0, f = 0; state.scenes.forEach(function (s) { b += s.bytes; f += s.files; }); return { bytes: b, files: f }; }
+function unlinkedScenes() {
+  return state.scenes.filter(function (s, i) { return i > 0 && !state.scenes.some(function (o) { return o.links.some(function (l) { return l.target === s.id; }); }); });
+}
+function syncPublish() {
+  var t = totals();
+  var n = state.scenes.length, okCount = G.validateSceneCount(n).ok;
+  $('publish').disabled = !okCount || t.bytes > LIMITS.bytes;
+  $('publish').textContent = n ? 'Publish · ' + G.fmtMoney(G.priceFor(n).subtotal) + ' + GST' : 'Publish';
+  var pn = $('price-note'); if (pn) pn.textContent = n ? (n + (n === 1 ? ' scene' : ' scenes') + ' × ' + G.fmtMoney(G.PRICING.perSceneCents) + ' = ' + G.fmtMoney(G.priceFor(n).subtotal) + ' + GST') : G.fmtMoney(G.PRICING.perSceneCents) + ' + GST per scene · ' + G.PRICING.minScenes + ' to ' + G.PRICING.maxScenes + ' scenes';
+  updateTitle();
+}
+function openPublish() {
+  var body = $('modal-b'); body.textContent = ''; $('modal-t').textContent = 'Tour details';
+  var t = totals();
+  function field(labelText, id, value, ph, help) {
+    var wrap = document.createElement('div'); wrap.style.marginBottom = '14px';
+    var lab = document.createElement('label'); lab.className = 'modal-field'; lab.htmlFor = id; lab.textContent = labelText; wrap.appendChild(lab);
+    var inp = document.createElement('input'); inp.type = 'text'; inp.id = id; inp.value = value; inp.placeholder = ph; inp.autocomplete = 'off'; wrap.appendChild(inp);
+    var h = document.createElement('div'); h.className = 'muted fh'; h.textContent = help; wrap.appendChild(h);
+    var e = document.createElement('p'); e.className = 'err'; e.id = id + '-err'; e.style.display = 'none'; wrap.appendChild(e);
+    body.appendChild(wrap); return inp;
+  }
+  var addr = field('Property address (tour title)', 'd-addr', state.details.address, 'e.g. 12 Example Street, Remuera, Auckland', 'Shown at the top of your tour and in link previews.');
+  var url = field('Listing link (optional)', 'd-url', state.details.url, 'https://www.trademe.co.nz/… or zillow.com/…', 'Adds an “Open Listing Page” button to your tour. Paste the link from your agent’s listing (Trade Me, Zillow, etc).');
+  addr.maxLength = 120; url.maxLength = 500; url.setAttribute('inputmode', 'url');
+  var kv = document.createElement('div'); kv.className = 'kv';
+  (function () { var p = G.priceFor(state.scenes.length); return [['Scenes', p.scenes + ' × ' + G.fmtMoney(p.unit)], ['Subtotal', G.fmtMoney(p.subtotal)], ['GST (15%)', G.fmtMoney(p.gst)], ['Total (incl. GST)', G.fmtMoney(p.total)]]; })().forEach(function (r) {
+    var a = document.createElement('span'); a.textContent = r[0]; var b = document.createElement('b'); b.textContent = r[1]; kv.appendChild(a); kv.appendChild(b);
+  });
+  body.appendChild(kv);
+  var un = unlinkedScenes();
+  if (un.length) { var w = document.createElement('p'); w.className = 'muted wn'; w.textContent = 'Not reachable by clicking through: ' + un.map(function (x) { return x.name; }).join(', ') + '. Visitors can still open them from “Explore Spaces”.'; body.appendChild(w); }
+  function show(id, msg) { var e = $(id); e.textContent = msg || ''; e.style.display = msg ? 'block' : 'none'; }
+  addr.addEventListener('input', function () { state.details.address = addr.value; show('d-addr-err', ''); updateTitle(); });
+  url.addEventListener('input', function () { state.details.url = url.value; show('d-url-err', ''); });
+  var go = $('modal-go'); go.style.display = ''; go.textContent = 'Continue to payment';
+  go.onclick = function () {
+    var a = G.validateAddress(addr.value), u = G.normalizeListingUrl(url.value), ok = true;
+    show('d-addr-err', a.ok ? '' : a.error); show('d-url-err', u.ok ? '' : u.error);
+    if (!a.ok || !u.ok) { (a.ok ? url : addr).focus(); return; }
+    state.details.address = a.value; state.details.url = u.value; updateTitle();
+    body.textContent = ''; $('modal-t').textContent = 'Details saved'; go.style.display = 'none';
+    var k = document.createElement('div'); k.className = 'kv';
+    [['Title', a.value], ['Description', 'A self guided tour of ' + a.value], ['Total', G.fmtMoney(G.priceFor(state.scenes.length).total) + ' incl. GST'], ['Tour link', 'tours.glow360.co.nz/client-###-' + G.slugify(a.value) + '/'], ['Listing link', u.value || 'None'], ['Autorotate', 'On']].forEach(function (r) {
+      var x = document.createElement('span'); x.textContent = r[0]; var y = document.createElement('b'); y.textContent = r[1]; y.style.wordBreak = 'break-word'; y.style.textAlign = 'right'; k.appendChild(x); k.appendChild(y);
+    });
+    body.appendChild(k);
+    var n = document.createElement('p'); n.className = 'muted'; n.textContent = 'Prototype: payment and publishing are the next build phase (Stripe checkout, secure upload, automatic publish). Nothing has been uploaded or charged.'; body.appendChild(n);
+    if (a.warn) { var w2 = document.createElement('p'); w2.className = 'muted wn'; w2.textContent = a.warn; body.appendChild(w2); }
+  };
+  $('modal').style.display = 'flex'; setTimeout(function () { addr.focus(); }, 30);
+}
+
+/* ---------- wiring ---------- */
+$('tt-scene').addEventListener('click', function () {
+  var s = curScene(); if (!s) return; var btn = $('tt-scene');
+  var inp = document.createElement('input'); inp.type = 'text'; inp.className = 'scn-input'; inp.value = s.name; inp.maxLength = 60; inp.setAttribute('aria-label', 'Scene name');
+  btn.style.display = 'none'; btn.parentNode.insertBefore(inp, btn.nextSibling); inp.focus(); inp.select();
+  function done(commit) {
+    if (!inp.parentNode) return; var v = clean(inp.value, 60); inp.remove(); btn.style.display = '';
+    if (commit && v && v !== s.name) { s.name = v; renderScenes(); state.scenes.forEach(renderHotspots); }
+    updateTitle();
+  }
+  inp.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Enter') done(true); else if (e.key === 'Escape') done(false); });
+  inp.addEventListener('blur', function () { done(true); });
+});
+$('add').addEventListener('click', function () { $('file').click(); });
+$('empty-add').addEventListener('click', function () { $('file').click(); });
+$('file').addEventListener('change', function (e) { var f = Array.prototype.slice.call(e.target.files); e.target.value = ''; addFiles(f); });
+$('empty-demo').addEventListener('click', async function () { addFiles([await demoFile(0), await demoFile(1)]); });
+
+$('b-link').addEventListener('click', addLink);
+$('b-info').addEventListener('click', addInfo);
+$('b-start').addEventListener('click', function () {
+  var s = curScene(); if (!s || !s.mz) return toast('Add a scene first');
+  var v = s.mz.view; s.start = { yaw: v.yaw(), pitch: v.pitch(), fov: v.fov() }; syncPublish(); toast('Initial view saved');
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if ($('modal').style.display === 'flex') $('modal').style.display = 'none'; else clearSel(); } });
+
+// tap (not drag) on the panorama places hotspots
+var down = null; var panoEl = $('pano');
+panoEl.addEventListener('pointerdown', function (e) { down = { x: e.clientX, y: e.clientY, t: Date.now(), hs: !!(e.target.closest && e.target.closest('.hs')) }; });
+panoEl.addEventListener('pointerup', function (e) {
+  if (!down || down.hs) { down = null; return; }
+  var moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = Date.now() - down.t; down = null;
+  if (moved < 8 && dt < 600) onPanoTap();
+});
+
+function applyLayout() {
+  if (viewer) viewer.updateSize();
+  var s = curScene(); if (s && s.mz) s.mz.view.setFov(fixedFov());   // re-fit the locked view after a resize / rotation
+}
+var lastPortrait = null;
+window.addEventListener('resize', function () {
+  var z = stageSize(), p = z.w < z.h;
+  if (p !== lastPortrait) { lastPortrait = p; applyLayout(); }
+});
+
+$('publish').addEventListener('click', openPublish);
+$('modal-x').addEventListener('click', function () { $('modal').style.display = 'none'; });
+window.addEventListener('beforeunload', function (e) { if (state.scenes.length) { e.preventDefault(); e.returnValue = ''; } });
+
+renderScenes(); syncPublish(); lastPortrait = stageSize().w < stageSize().h;
+})();
+
 </script>
 </body>
 </html>
