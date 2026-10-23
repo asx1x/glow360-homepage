@@ -4,7 +4,7 @@ var G = G360;
 var $ = function (id) { return document.getElementById(id); };
 var LIMITS = { scenes: G.PRICING.maxScenes, bytes: 200 * 1024 * 1024 };
 
-var state = { scenes: [], cur: -1, pending: null, portrait: false, aspect: true, auto: true, busy: false, nextId: 0, sel: null, details: { address: '', url: '' } };
+var state = { scenes: [], cur: -1, pending: null, portrait: false, aspect: true, auto: true, busy: false, nextId: 0, sel: null, cover: null, details: { clientName: '', clientEmail: '', address: '', url: '', unlisted: false, rightsConfirmed: false } }; // PIECE4 TWEAKS1
 var viewer = null, autorotate = null;
 
 /* ---------- helpers ---------- */
@@ -500,20 +500,93 @@ function syncPublish() {
   var pn = $('price-note'); if (pn) pn.textContent = n ? (n + (n === 1 ? ' scene' : ' scenes') + ' × ' + G.fmtMoney(G.PRICING.perSceneCents) + ' = ' + G.fmtMoney(G.priceFor(n).subtotal) + ' + GST') : G.fmtMoney(G.PRICING.perSceneCents) + ' + GST per scene · ' + G.PRICING.minScenes + ' to ' + G.PRICING.maxScenes + ' scenes';
   updateTitle();
 }
+/* ---------- cover image (the link-preview image, uploaded as _og/preview.jpg) ---------- */
+// Limits mirror the server (supabase/functions/_shared/limits.ts + ogImage.ts). The server is the
+// authority; these exist so the customer finds out now, not after paying. A hair of margin on the
+// aspect band so rounding after a resize can never land just outside what the server accepts.
+var COVER = { maxBytes: 3 * 1024 * 1024, minW: 800, minH: 420, maxW: 4000, maxH: 2100, minAspect: 4 / 3 + 0.01, maxAspect: 2.4 - 0.01 };
+
+async function processCover(file) {
+  if (!file || !/^image\//.test(file.type || '')) return { ok: false, error: 'Please choose an image file (JPEG, PNG or WebP).' };
+  var bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch (e) { return { ok: false, error: 'That image could not be read. If it is a HEIC photo, convert it to JPEG first.' }; }
+  var w = bmp.width, h = bmp.height, aspect = w / h;
+  if (w < COVER.minW || h < COVER.minH) { bmp.close(); return { ok: false, error: 'That image is too small (' + w + '×' + h + '). It needs to be at least ' + COVER.minW + '×' + COVER.minH + '.' }; }
+  if (aspect < COVER.minAspect || aspect > COVER.maxAspect) { bmp.close(); return { ok: false, error: 'That image is the wrong shape (' + aspect.toFixed(2) + ':1). Use a landscape image between 4:3 and 2.4:1 (a normal wide photo or screenshot).' }; }
+  var scale = Math.min(1, COVER.maxW / w, COVER.maxH / h);
+  var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+  var cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cw, ch); cx.drawImage(bmp, 0, 0, cw, ch); bmp.close();
+  var blob = null, qs = [0.9, 0.82, 0.74, 0.66, 0.58];
+  for (var i = 0; i < qs.length; i++) {
+    blob = await new Promise(function (res) { cv.toBlob(res, 'image/jpeg', qs[i]); });
+    if (blob && blob.size <= COVER.maxBytes) break;
+  }
+  if (!blob || blob.type !== 'image/jpeg') return { ok: false, error: 'Could not prepare that image as a JPEG. Try a different image.' };
+  if (blob.size > COVER.maxBytes) return { ok: false, error: 'That image is too large even after compression. Try a smaller one.' };
+  return { ok: true, blob: blob, width: cw, height: ch };
+}
+
+// Stored with the draft so a reload (or the Stripe round trip) keeps it. A failed save never blocks editing.
+function persistCover(blob) {
+  return enqueue(async function () {
+    if (!persist.id) persist.id = await D.startNew();
+    if (blob) await D.saveBlob(persist.id, D.COVER_KEY, blob); else await D.deleteBlob(persist.id, D.COVER_KEY);
+    persist.everSaved = true;
+  });
+}
+
+var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // same shape the server's notification code uses
+function checkName(v) { v = clean(v, 100); return v ? { ok: true, value: v } : { ok: false, error: 'Please enter your name.' }; }
+function checkEmail(v) { v = String(v).trim(); return (v.length <= 254 && EMAIL_RE.test(v)) ? { ok: true, value: v } : { ok: false, error: 'Please enter a valid email address.' }; }
+
 function openPublish() {
   var body = $('modal-b'); body.textContent = ''; $('modal-t').textContent = 'Tour details';
-  var t = totals();
+  var coverUrl = null;
+  function setCoverPreview(img) { if (coverUrl) { URL.revokeObjectURL(coverUrl); coverUrl = null; } if (state.cover) { coverUrl = URL.createObjectURL(state.cover); img.src = coverUrl; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display = 'none'; } }
   function field(labelText, id, value, ph, help) {
     var wrap = document.createElement('div'); wrap.style.marginBottom = '14px';
     var lab = document.createElement('label'); lab.className = 'modal-field'; lab.htmlFor = id; lab.textContent = labelText; wrap.appendChild(lab);
     var inp = document.createElement('input'); inp.type = 'text'; inp.id = id; inp.value = value; inp.placeholder = ph; inp.autocomplete = 'off'; wrap.appendChild(inp);
-    var h = document.createElement('div'); h.className = 'muted fh'; h.textContent = help; wrap.appendChild(h);
+    if (help) { var h = document.createElement('div'); h.className = 'muted fh'; h.textContent = help; wrap.appendChild(h); }
     var e = document.createElement('p'); e.className = 'err'; e.id = id + '-err'; e.style.display = 'none'; wrap.appendChild(e);
     body.appendChild(wrap); return inp;
   }
+  function checkRow(id, checked, text, help) {
+    var wrap = document.createElement('div'); wrap.style.marginBottom = '14px';
+    var lab = document.createElement('label'); lab.style.cssText = 'display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.4';
+    var cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = checked; cb.style.cssText = 'margin-top:2px;flex:0 0 auto;width:16px;height:16px';
+    var t = document.createElement('span'); t.textContent = text; lab.appendChild(cb); lab.appendChild(t); wrap.appendChild(lab);
+    if (help) { var h = document.createElement('div'); h.className = 'muted fh'; h.style.marginLeft = '26px'; h.textContent = help; wrap.appendChild(h); }
+    var e = document.createElement('p'); e.className = 'err'; e.id = id + '-err'; e.style.display = 'none'; e.style.marginLeft = '26px'; wrap.appendChild(e);
+    body.appendChild(wrap); return cb;
+  }
+
+  var nameIn = field('Your name', 'd-name', state.details.clientName, 'Jane Smith', '');
+  var emailIn = field('Your email', 'd-email', state.details.clientEmail, 'you@example.com', 'We email your tour link here when it is live.');
+  nameIn.maxLength = 100; nameIn.autocomplete = 'name';
+  emailIn.maxLength = 254; emailIn.setAttribute('inputmode', 'email'); emailIn.autocomplete = 'email'; emailIn.autocapitalize = 'off';
   var addr = field('Property address (tour title)', 'd-addr', state.details.address, 'e.g. 12 Example Street, Remuera, Auckland', 'Shown at the top of your tour and in link previews.');
   var url = field('Listing link (optional)', 'd-url', state.details.url, 'https://www.trademe.co.nz/… or zillow.com/…', 'Adds an “Open Listing Page” button to your tour. Paste the link from your agent’s listing (Trade Me, Zillow, etc).');
   addr.maxLength = 120; url.maxLength = 500; url.setAttribute('inputmode', 'url');
+
+  // cover image
+  var cw = document.createElement('div'); cw.style.marginBottom = '14px';
+  var cl = document.createElement('div'); cl.className = 'modal-field'; cl.textContent = 'Cover image'; cw.appendChild(cl);
+  var pv = document.createElement('img'); pv.alt = 'Cover image preview'; pv.style.cssText = 'display:none;width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1px solid var(--line);margin-bottom:8px'; cw.appendChild(pv);
+  var cr = document.createElement('div'); cr.className = 'row'; cr.style.marginBottom = '0';
+  var pick = document.createElement('button'); pick.type = 'button'; pick.className = 'btn sm'; pick.textContent = state.cover ? 'Change image' : 'Choose image'; cr.appendChild(pick);
+  var rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn sm dng'; rm.textContent = 'Remove'; rm.style.display = state.cover ? '' : 'none'; cr.appendChild(rm);
+  cw.appendChild(cr);
+  var fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.hidden = true; cw.appendChild(fi);
+  var ch = document.createElement('div'); ch.className = 'muted fh'; ch.textContent = 'Shown when your link is shared (WhatsApp, Facebook, iMessage…). A wide landscape photo works best: at least ' + COVER.minW + '×' + COVER.minH + ', shaped between 4:3 and 2.4:1.'; cw.appendChild(ch);
+  var ce = document.createElement('p'); ce.className = 'err'; ce.id = 'd-cover-err'; ce.style.display = 'none'; cw.appendChild(ce);
+  body.appendChild(cw); setCoverPreview(pv);
+
+  var rights = checkRow('d-rights', state.details.rightsConfirmed === true, 'I am the owner of the property, or I have permission from the owner of this property to create and share this tour of the property.', ''); // TWEAKS3: declaration comes before the visibility choice
+  var pub = checkRow('d-public', state.details.unlisted === true, 'Keep my tour private', 'By default your tour is listed on the Glow360 homepage and sitemap so people can find it. Tick this box to keep it private instead: it still gets its own link to share, but is not listed.'); // TWEAKS2
+
   var kv = document.createElement('div'); kv.className = 'kv';
   (function () { var p = G.priceFor(state.scenes.length); return [['Scenes', p.scenes + ' × ' + G.fmtMoney(p.unit)], ['Subtotal', G.fmtMoney(p.subtotal)], ['GST (15%)', G.fmtMoney(p.gst)], ['Total (incl. GST)', G.fmtMoney(p.total)]]; })().forEach(function (r) {
     var a = document.createElement('span'); a.textContent = r[0]; var b = document.createElement('b'); b.textContent = r[1]; kv.appendChild(a); kv.appendChild(b);
@@ -522,24 +595,46 @@ function openPublish() {
   var un = unlinkedScenes();
   if (un.length) { var w = document.createElement('p'); w.className = 'muted wn'; w.textContent = 'Not reachable by clicking through: ' + un.map(function (x) { return x.name; }).join(', ') + '. Visitors can still open them from “Explore Spaces”.'; body.appendChild(w); }
   function show(id, msg) { var e = $(id); e.textContent = msg || ''; e.style.display = msg ? 'block' : 'none'; }
+
+  nameIn.addEventListener('input', function () { state.details.clientName = nameIn.value; show('d-name-err', ''); });
+  emailIn.addEventListener('input', function () { state.details.clientEmail = emailIn.value; show('d-email-err', ''); });
   addr.addEventListener('input', function () { state.details.address = addr.value; show('d-addr-err', ''); updateTitle(); });
   url.addEventListener('input', function () { state.details.url = url.value; show('d-url-err', ''); });
+  pub.addEventListener('change', function () { state.details.unlisted = pub.checked; });
+  rights.addEventListener('change', function () { state.details.rightsConfirmed = rights.checked; show('d-rights-err', ''); });
+  pick.addEventListener('click', function () { fi.click(); });
+  rm.addEventListener('click', function () { state.cover = null; setCoverPreview(pv); pick.textContent = 'Choose image'; rm.style.display = 'none'; show('d-cover-err', ''); persistCover(null); });
+  fi.addEventListener('change', async function () {
+    var f = fi.files && fi.files[0]; fi.value = ''; if (!f) return;
+    pick.disabled = true; show('d-cover-err', ''); ch.textContent = 'Preparing image…';
+    var r = await processCover(f);
+    pick.disabled = false; ch.textContent = 'Shown when your link is shared (WhatsApp, Facebook, iMessage…). A wide landscape photo works best: at least ' + COVER.minW + '×' + COVER.minH + ', shaped between 4:3 and 2.4:1.';
+    if (!r.ok) { show('d-cover-err', r.error); return; }
+    state.cover = r.blob; setCoverPreview(pv); pick.textContent = 'Change image'; rm.style.display = ''; persistCover(r.blob);
+  });
+
   var go = $('modal-go'); go.style.display = ''; go.textContent = 'Continue to payment';
   go.onclick = function () {
-    var a = G.validateAddress(addr.value), u = G.normalizeListingUrl(url.value), ok = true;
+    var nm = checkName(nameIn.value), em = checkEmail(emailIn.value);
+    var a = G.validateAddress(addr.value), u = G.normalizeListingUrl(url.value);
+    show('d-name-err', nm.ok ? '' : nm.error); show('d-email-err', em.ok ? '' : em.error);
     show('d-addr-err', a.ok ? '' : a.error); show('d-url-err', u.ok ? '' : u.error);
-    if (!a.ok || !u.ok) { (a.ok ? url : addr).focus(); return; }
-    state.details.address = a.value; state.details.url = u.value; updateTitle();
+    show('d-cover-err', state.cover ? '' : 'Please add a cover image.');
+    show('d-rights-err', rights.checked ? '' : 'Please confirm this to continue.');
+    var firstBad = !nm.ok ? nameIn : !em.ok ? emailIn : !a.ok ? addr : !u.ok ? url : !state.cover ? pick : !rights.checked ? rights : null;
+    if (firstBad) { firstBad.focus(); return; }
+    state.details.clientName = nm.value; state.details.clientEmail = em.value;
+    state.details.address = a.value; state.details.url = u.value; state.details.unlisted = pub.checked; state.details.rightsConfirmed = true; updateTitle();
     body.textContent = ''; $('modal-t').textContent = 'Details saved'; go.style.display = 'none';
     var k = document.createElement('div'); k.className = 'kv';
-    [['Title', a.value], ['Description', 'A self guided tour of ' + a.value], ['Total', G.fmtMoney(G.priceFor(state.scenes.length).total) + ' incl. GST'], ['Tour link', 'tours.glow360.co.nz/client-###-' + G.slugify(a.value) + '/'], ['Listing link', u.value || 'None'], ['Autorotate', 'On']].forEach(function (r) {
+    [['Name', nm.value], ['Email', em.value], ['Title', a.value], ['Description', 'A self guided tour of ' + a.value], ['Total', G.fmtMoney(G.priceFor(state.scenes.length).total) + ' incl. GST'], ['Tour link', 'tours.glow360.co.nz/client-###-' + G.slugify(a.value) + '/'], ['Listing link', u.value || 'None'], ['Visibility', state.details.unlisted ? 'Private link (not listed)' : 'Listed publicly'], ['Autorotate', 'On']].forEach(function (r) {
       var x = document.createElement('span'); x.textContent = r[0]; var y = document.createElement('b'); y.textContent = r[1]; y.style.wordBreak = 'break-word'; y.style.textAlign = 'right'; k.appendChild(x); k.appendChild(y);
     });
     body.appendChild(k);
     var n = document.createElement('p'); n.className = 'muted'; n.textContent = 'Prototype: payment and publishing are the next build phase (Stripe checkout, secure upload, automatic publish). Nothing has been uploaded or charged.'; body.appendChild(n);
     if (a.warn) { var w2 = document.createElement('p'); w2.className = 'muted wn'; w2.textContent = a.warn; body.appendChild(w2); }
   };
-  $('modal').style.display = 'flex'; setTimeout(function () { addr.focus(); }, 30);
+  $('modal').style.display = 'flex'; setTimeout(function () { nameIn.focus(); }, 30);
 }
 
 /* ---------- persistence (G360Draft) ---------- */
@@ -594,7 +689,7 @@ function metaRecord(s) {
   };
 }
 function metaSnap(orderIds) {
-  return { sceneOrder: orderIds, curId: currentSceneId(), details: { address: state.details.address, url: state.details.url } };
+  return { sceneOrder: orderIds, curId: currentSceneId(), details: Object.assign({}, state.details) };
 }
 
 // Save a freshly tiled scene: its record and every tile blob (plus a thumbnail) in one transaction.
@@ -688,8 +783,13 @@ async function sceneFromRecord(rec) {
 async function rebuildFrom(loaded) {
   persist.id = loaded.meta.draftId;
   var det = loaded.meta.details || {};
+  state.details.clientName = det.clientName || '';
+  state.details.clientEmail = det.clientEmail || '';
   state.details.address = det.address || '';
   state.details.url = det.url || '';
+  state.details.unlisted = det.unlisted === true;             // listed unless the customer chose private
+  state.details.rightsConfirmed = det.rightsConfirmed === true;
+  state.cover = loaded.cover || null;
   updateTitle();
   if (!loaded.scenes.length) { persist.metaJson = JSON.stringify(metaSnap([])); return; }
   if (!ensureViewer()) return;

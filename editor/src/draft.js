@@ -28,9 +28,10 @@ var G360Draft = (function () {
   function fallbackKey(sceneId, face) { return sceneId + '/__fb/' + face; }
 
   function blankDetails() {
-    // unlisted defaults to true and rights to false: the customer must actively opt in to public
-    // visibility and actively make the ownership declaration (see the main handoff, Step 8.5).
-    return { clientName: '', clientEmail: '', address: '', url: '', unlisted: true, rightsConfirmed: false };
+    // unlisted defaults to false (listed on the Glow360 site: the platform grows through public listings;
+    // the customer can opt out for a private tour) and rights to false: the customer must actively make
+    // the ownership declaration (see the main handoff, Step 8.5).
+    return { clientName: '', clientEmail: '', address: '', url: '', unlisted: false, rightsConfirmed: false };
   }
 
   function isQuotaError(e) {
@@ -319,12 +320,12 @@ var G360Draft = (function () {
       check('startNew returns a uuid', /^[0-9a-f-]{36}$/.test(id), id);
       check('current draft id is remembered', (await d.getCurrentDraftId()) === id);
       var m = await d.loadMeta(id);
-      check('new draft starts with safe defaults (unlisted true, rights false)',
-        m && m.details.unlisted === true && m.details.rightsConfirmed === false, JSON.stringify(m && m.details));
+      check('new draft starts with defaults (listed, rights unconfirmed)',
+        m && m.details.unlisted === false && m.details.rightsConfirmed === false, JSON.stringify(m && m.details));
       await d.saveMeta(id, { orderId: 'o1', slug: 's1', resumeToken: 't1', details: { address: '1 Test St' } });
       m = await d.loadMeta(id);
       check('saveMeta merges top-level fields', m.orderId === 'o1' && m.slug === 's1' && m.resumeToken === 't1');
-      check('saveMeta deep-merges details without wiping siblings', m.details.address === '1 Test St' && m.details.unlisted === true);
+      check('saveMeta deep-merges details without wiping siblings', m.details.address === '1 Test St' && m.details.unlisted === false);
 
       var blobsA = new Map([
         [A + '/preview.jpg', mkBlob(10, 1)], [A + '/1/f/0/0.jpg', mkBlob(20, 2)],
