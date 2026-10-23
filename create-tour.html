@@ -158,7 +158,7 @@ input[type=text]:focus,select:focus,textarea:focus{outline:2px solid rgba(165,11
 <div id="app">
   <header>
     <h1>Glow360</h1><span class="tag">Tour builder · prototype</span><span class="sp"></span>
-    <span class="muted" id="hstat"></span>
+    <span class="muted" id="savestat"></span><span class="muted" id="hstat"></span>
     <button class="btn pri" id="publish" disabled>Publish · $100 + GST</button>
   </header>
 
@@ -1236,11 +1236,12 @@ async function addFiles(files) {
   try {
     for (var i = 0; i < files.length; i++) {
       var s = await tileScene(files[i], i, files.length, cap, state.nextId++);
-      state.scenes.push(s); buildMz(s); added++;
+      state.scenes.push(s); buildMz(s); added++; persistNewScene(s);
       if (state.cur < 0) showScene(state.scenes.length - 1, true); else { renderScenes(); syncPublish(); }
     }
     toast(added + (added === 1 ? ' scene' : ' scenes') + ' ready');
   } catch (e) { console.error(e); showErr(e.message || String(e)); }
+  setProgress('Saving your draft…', 1); await persistIdle();
   state.busy = false; setBusy(); setProgress('');
 }
 function setBusy() { ['add', 'empty-add', 'empty-demo'].forEach(function (id) { $(id).disabled = state.busy; }); }
@@ -1419,6 +1420,208 @@ function openPublish() {
   $('modal').style.display = 'flex'; setTimeout(function () { addr.focus(); }, 30);
 }
 
+/* ---------- persistence (G360Draft) ---------- */
+// The editor saves itself to IndexedDB so a reload, crash or Stripe round trip can't lose a tour.
+//  - A scene is saved the moment it finishes tiling (the slow work worth protecting): its metadata and
+//    every tile blob commit atomically (G360Draft.saveScene).
+//  - Everything else (rename, hotspots, start view, reorder, delete, address/link) is found by a
+//    1-second dirty check against what was last written, so no individual edit needs its own hook.
+//  - All writes go through one queue, so they can never overlap or reorder.
+//  - The draft id made here is the SAME uuid the order API takes as draftId (piece 6); that is what
+//    makes create-order's idempotency work across reloads.
+//  - A failed save never blocks editing: the tour keeps working in memory and the header says
+//    "Not saved: ..." so the customer knows a reload would lose it.
+//  - One browser tab per draft: two tabs editing the same draft would overwrite each other.
+var D = G360Draft;
+var persist = { id: null, ready: false, pending: 0, failed: '', saved: new Map(), metaJson: '', everSaved: false, asked: false };
+var chain = Promise.resolve();
+
+function setSaveStat() {
+  var el = $('savestat'); if (!el) return;
+  if (persist.failed) { el.textContent = persist.failed; el.className = 'muted no'; }
+  else if (persist.pending) { el.textContent = 'Saving…'; el.className = 'muted'; }
+  else if (persist.everSaved) { el.textContent = 'Draft saved'; el.className = 'muted'; }
+  else { el.textContent = ''; el.className = 'muted'; }
+}
+
+function onPersistError(e) {
+  console.error('draft save failed', e);
+  persist.failed = D.isQuotaError(e) ? 'Not saved: browser storage is full'
+    : 'Not saved: ' + ((e && e.message) || 'storage error');
+}
+
+function enqueue(fn) {
+  persist.pending++; setSaveStat();
+  var p = chain.then(fn).catch(onPersistError).then(function () { persist.pending--; setSaveStat(); });
+  chain = p;
+  return p;
+}
+function persistIdle() { return chain; }
+
+function currentSceneId() { var c = curScene(); return c ? c.id : null; }
+
+// The editable part of a scene: what the dirty check watches and updateScene writes. Untitled info
+// points are left out, matching the editor, which discards them when deselected.
+function metaRecord(s) {
+  return {
+    name: s.name,
+    start: { yaw: s.start.yaw, pitch: s.start.pitch, fov: s.start.fov },
+    links: s.links.map(function (l) { return { yaw: l.yaw, pitch: l.pitch, target: l.target }; }),
+    infos: s.infos.filter(function (n) { return String(n.title || '').trim(); })
+      .map(function (n) { return { yaw: n.yaw, pitch: n.pitch, title: n.title, text: n.text || '' }; })
+  };
+}
+function metaSnap(orderIds) {
+  return { sceneOrder: orderIds, curId: currentSceneId(), details: { address: state.details.address, url: state.details.url } };
+}
+
+// Save a freshly tiled scene: its record and every tile blob (plus a thumbnail) in one transaction.
+// The 6 fallback faces are not stored: they are rebuilt from preview.jpg on restore.
+function persistNewScene(s) {
+  return enqueue(async function () {
+    if (state.scenes.indexOf(s) < 0) return; // deleted while waiting its turn
+    if (!persist.id) persist.id = await D.startNew();
+    var blobs = new Map(s.tiles);
+    blobs.set(D.thumbKey(s.id), await toBlob(s.thumb, 'image/jpeg', 0.8));
+    var order = state.scenes.map(function (x) { return x.id; })
+      .filter(function (id) { return id === s.id || persist.saved.has(id); });
+    var snap = metaSnap(order), rec = metaRecord(s);
+    await D.saveScene(persist.id,
+      Object.assign({ id: s.id, faceSize: s.faceSize, srcWidth: s.srcWidth, capped: s.capped, levels: s.levels, bytes: s.bytes, files: s.files }, rec),
+      blobs, snap);
+    persist.saved.set(s.id, JSON.stringify(rec));
+    persist.metaJson = JSON.stringify(snap);
+    persist.everSaved = true;
+    if (!persist.asked) { persist.asked = true; D.requestPersistence(); } // best effort: ask the browser not to evict us
+  });
+}
+
+// What differs between the editor and what was last written. Returns null when nothing does.
+function computeWork() {
+  if (!persist.id) return null;
+  var ids = state.scenes.map(function (s) { return s.id; });
+  var w = { deletes: [], updates: [], meta: null };
+  persist.saved.forEach(function (json, id) { if (ids.indexOf(id) < 0) w.deletes.push(id); });
+  state.scenes.forEach(function (s) {
+    if (!persist.saved.has(s.id)) return; // not saved yet: persistNewScene owns it
+    var rec = metaRecord(s), json = JSON.stringify(rec);
+    if (json !== persist.saved.get(s.id)) w.updates.push({ id: s.id, rec: rec, json: json });
+  });
+  var snap = metaSnap(ids.filter(function (id) { return persist.saved.has(id); }));
+  var mj = JSON.stringify(snap);
+  if (mj !== persist.metaJson) w.meta = { snap: snap, json: mj };
+  return (w.deletes.length || w.updates.length || w.meta) ? w : null;
+}
+
+async function runWork(w) {
+  var i;
+  for (i = 0; i < w.deletes.length; i++) { await D.deleteScene(persist.id, w.deletes[i], {}); persist.saved.delete(w.deletes[i]); }
+  for (i = 0; i < w.updates.length; i++) { await D.updateScene(persist.id, w.updates[i].id, w.updates[i].rec); persist.saved.set(w.updates[i].id, w.updates[i].json); }
+  if (w.meta) { await D.saveMeta(persist.id, w.meta.snap); persist.metaJson = w.meta.json; }
+  persist.everSaved = true;
+}
+
+function flushSoon() {
+  if (!persist.ready || persist.pending) return;
+  var w = computeWork();
+  if (!w) {
+    // Nothing left to write. Clear an old failure once every scene is safely stored.
+    var unsaved = state.scenes.some(function (s) { return !persist.saved.has(s.id); });
+    if (persist.failed && !unsaved) { persist.failed = ''; setSaveStat(); }
+    return;
+  }
+  enqueue(function () { return runWork(w); });
+}
+
+async function sceneFromRecord(rec) {
+  if (!rec.levels || !rec.start || !rec.links || !rec.infos) throw new Error('incomplete scene record');
+  var tiles = new Map(), thumbBlob = null, tkey = D.thumbKey(rec.id);
+  rec.blobs.forEach(function (blob, k) { if (k === tkey) thumbBlob = blob; else tiles.set(k, blob); });
+  var previewBlob = tiles.get(rec.id + '/preview.jpg');
+  if (!previewBlob) throw new Error('preview strip missing');
+  var thumb = mkCanvas(192, 96);
+  if (thumbBlob) {
+    var tb = await createImageBitmap(thumbBlob);
+    thumb.getContext('2d').drawImage(tb, 0, 0, 192, 96);
+    try { tb.close(); } catch (e) {}
+  }
+  // The 256px fallback faces are the six slices of the preview strip, in G.PREVIEW_ORDER.
+  var strip = await createImageBitmap(previewBlob), fallback = {};
+  for (var i = 0; i < 6; i++) {
+    var c = mkCanvas(256, 256);
+    c.getContext('2d').drawImage(strip, 0, i * 256, 256, 256, 0, 0, 256, 256);
+    fallback[G.PREVIEW_ORDER[i]] = c;
+  }
+  try { strip.close(); } catch (e) {}
+  return {
+    id: rec.id, thumb: thumb, name: rec.name, faceSize: rec.faceSize, srcWidth: rec.srcWidth, capped: rec.capped,
+    levels: rec.levels, tiles: tiles, fallback: fallback, bytes: rec.bytes, files: rec.files,
+    start: { yaw: rec.start.yaw, pitch: rec.start.pitch, fov: rec.start.fov },
+    links: rec.links.map(function (l) { return { yaw: l.yaw, pitch: l.pitch, target: l.target }; }),
+    infos: rec.infos.map(function (n) { return { yaw: n.yaw, pitch: n.pitch, title: n.title, text: n.text || '' }; }),
+    mz: null
+  };
+}
+
+async function rebuildFrom(loaded) {
+  persist.id = loaded.meta.draftId;
+  var det = loaded.meta.details || {};
+  state.details.address = det.address || '';
+  state.details.url = det.url || '';
+  updateTitle();
+  if (!loaded.scenes.length) { persist.metaJson = JSON.stringify(metaSnap([])); return; }
+  if (!ensureViewer()) return;
+  state.busy = true; setBusy();
+  var skipped = [], restored = [], maxUid = -1;
+  try {
+    for (var i = 0; i < loaded.scenes.length; i++) {
+      var rec = loaded.scenes[i];
+      setProgress('Restoring your draft… (' + (i + 1) + '/' + loaded.scenes.length + ')', i / loaded.scenes.length);
+      try { restored.push(await sceneFromRecord(rec)); }
+      catch (e) { console.warn('skipping unreadable scene', rec.id, e); skipped.push(rec.id); }
+    }
+    var okIds = {};
+    restored.forEach(function (s) { okIds[s.id] = true; });
+    // A link to a scene that could not be restored would fail server-side validation at publish.
+    restored.forEach(function (s) { s.links = s.links.filter(function (l) { return okIds[l.target]; }); });
+    // Every scene must be in state.scenes BEFORE any is built: a link hotspot is only drawn if its target exists.
+    restored.forEach(function (s) { state.scenes.push(s); });
+    restored.forEach(function (s) {
+      buildMz(s);
+      persist.saved.set(s.id, JSON.stringify(metaRecord(s)));
+      var u = parseInt(s.id, 10); if (u > maxUid) maxUid = u;
+    });
+  } finally { state.busy = false; setBusy(); setProgress(''); }
+  state.nextId = Math.max(state.nextId, maxUid + 1); // new scene ids must not collide with restored ones
+  if (state.scenes.length) {
+    var idx = state.scenes.map(function (s) { return s.id; }).indexOf(loaded.meta.curId);
+    showScene(idx < 0 ? 0 : idx, true);
+    toast('Restored your draft (' + state.scenes.length + (state.scenes.length === 1 ? ' scene' : ' scenes') + ')');
+  }
+  persist.metaJson = JSON.stringify(metaSnap(state.scenes.map(function (s) { return s.id; })));
+  persist.everSaved = true;
+  skipped.forEach(function (id) { enqueue(function () { return D.deleteScene(persist.id, id, {}); }); });
+}
+
+async function restoreDraft() {
+  try {
+    var id = await D.getCurrentDraftId();
+    var loaded = id ? await D.load(id) : null;
+    if (loaded) await rebuildFrom(loaded);
+  } catch (e) {
+    console.error('could not restore draft', e);
+    showErr('Could not restore your saved draft: ' + ((e && e.message) || e));
+    state.busy = false; setBusy(); setProgress('');
+  }
+  persist.ready = true;
+  setSaveStat();
+}
+
+setInterval(flushSoon, 1000);
+document.addEventListener('visibilitychange', function () { if (document.hidden) flushSoon(); });
+window.addEventListener('pagehide', flushSoon);
+/* ---------- end persistence ---------- */
+
 /* ---------- wiring ---------- */
 $('tt-scene').addEventListener('click', function () {
   var s = curScene(); if (!s) return; var btn = $('tt-scene');
@@ -1469,6 +1672,7 @@ $('modal-x').addEventListener('click', function () { $('modal').style.display = 
 window.addEventListener('beforeunload', function (e) { if (state.scenes.length) { e.preventDefault(); e.returnValue = ''; } });
 
 renderScenes(); syncPublish(); lastPortrait = stageSize().w < stageSize().h;
+restoreDraft();
 })();
 
 </script>
