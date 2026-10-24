@@ -349,6 +349,116 @@ async function tileScene(file, idx, total, cap, uid) {
     start: { yaw: 0, pitch: 0, fov: MAX_VFOV }, links: [], infos: [], mz: null };
 }
 
+/* ---------- tiling worker (PIECE5) ---------- */
+// The heavy work (decode, six cube faces, downscale ladder, JPEG encodes) runs in a Web Worker built from an
+// inline Blob (build.js embeds core.js + worker.js in #g360-worker-src), so the page never freezes. The worker
+// returns plain data (blobs + numbers) and the scene is built by sceneFromRecord(), the same path a restored
+// draft uses. If workers or OffscreenCanvas are missing or fail, tileScene() above does the job on the main
+// thread exactly as before.
+//   error kind 'user'        -> the photo is unusable (wrong shape / too small): show it, don't retry
+//   error kind 'unsupported' -> worker can't do this here: stop using it for the session, use the main thread
+//   error kind 'broken'      -> worker failed to start or crashed: same as unsupported
+//   error kind 'failed'      -> anything else: retry THIS scene on the main thread, keep the worker for the next
+var tileWorker = null, workerOk = null;
+function workerSupported() {
+  if (workerOk === null) {
+    workerOk = typeof Worker !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined' &&
+      typeof URL.createObjectURL === 'function' && typeof OffscreenCanvas !== 'undefined' &&
+      typeof OffscreenCanvas.prototype.convertToBlob === 'function' && !!$('g360-worker-src');
+  }
+  return workerOk;
+}
+function getTileWorker() {
+  if (tileWorker) return tileWorker;
+  var url = URL.createObjectURL(new Blob([$('g360-worker-src').textContent], { type: 'text/javascript' }));
+  tileWorker = new Worker(url);
+  return tileWorker;
+}
+function retireTileWorker() { if (tileWorker) { try { tileWorker.terminate(); } catch (e) {} tileWorker = null; } }
+function tileError(kind, message) { var e = new Error(message); e.kind = kind; return e; }
+
+function tileSceneWorker(file, idx, total, cap, uid) {
+  return new Promise(function (resolve, reject) {
+    var w;
+    try { w = getTileWorker(); } catch (e) { return reject(tileError('broken', (e && e.message) || 'the tiling worker could not start')); }
+    var label = 'Scene ' + (idx + 1) + '/' + total + ': ';
+    function detach() { w.onmessage = null; w.onerror = null; w.onmessageerror = null; }
+    w.onmessage = function (ev) {
+      var m = ev.data || {};
+      if (m.type === 'progress') { setProgress(m.text, m.frac); return; }
+      detach();
+      if (m.type === 'error') { if (m.kind === 'unsupported') retireTileWorker(); reject(tileError(m.kind || 'failed', m.message)); return; }
+      if (m.type !== 'done' || !m.result) { retireTileWorker(); reject(tileError('broken', 'unexpected reply from the tiling worker')); return; }
+      var r = m.result, blobs = r.tiles;
+      blobs.set(D.thumbKey(r.id), r.thumbBlob);
+      sceneFromRecord({
+        id: r.id, name: G.defaultSceneName(file.name, state.scenes.length + 1), faceSize: r.faceSize, srcWidth: r.srcWidth,
+        capped: r.capped, levels: r.levels, bytes: r.bytes, files: r.files,
+        start: { yaw: 0, pitch: 0, fov: MAX_VFOV }, links: [], infos: [], blobs: blobs
+      }).then(resolve, function (e) { reject(tileError('failed', (e && e.message) || String(e))); });
+    };
+    w.onerror = function (ev) { detach(); retireTileWorker(); reject(tileError('broken', (ev && ev.message) || 'the tiling worker crashed')); };
+    w.onmessageerror = function () { detach(); retireTileWorker(); reject(tileError('broken', 'the tiling worker sent data that could not be read')); };
+    w.postMessage({ type: 'tile', file: file, cap: cap, uid: uid, label: label });
+  });
+}
+
+async function tileSceneAuto(file, idx, total, cap, uid) {
+  if (workerSupported()) {
+    try { return await tileSceneWorker(file, idx, total, cap, uid); }
+    catch (e) {
+      if (e && e.kind === 'user') throw e;
+      if (e && (e.kind === 'unsupported' || e.kind === 'broken')) { workerOk = false; retireTileWorker(); }
+      console.warn('Tiling worker failed (' + ((e && e.kind) || 'unknown') + '): ' + ((e && e.message) || e) + ' Using the main thread for this scene.');
+    }
+  }
+  return tileScene(file, idx, total, cap, uid);
+}
+
+// Browser self-test: window.G360TileSelfTest() tiles the built-in demo panorama on the main thread AND in the
+// worker, then compares them. It never touches your draft (no scenes are added or saved).
+window.G360TileSelfTest = async function () {
+  var out = [];
+  function check(name, pass, detail) { out.push({ test: name, pass: !!pass, detail: detail === undefined ? '' : String(detail) }); }
+  function watch() {
+    var last = performance.now(), worst = 0, t = setInterval(function () { var n = performance.now(); worst = Math.max(worst, n - last - 20); last = n; }, 20);
+    return function () { clearInterval(t); return Math.max(0, Math.round(worst)); };
+  }
+  async function pixels(blob) {
+    var b = await createImageBitmap(blob), c = mkCanvas(b.width, b.height), x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(b, 0, 0); try { b.close(); } catch (e) {}
+    var d = x.getImageData(0, 0, c.width, c.height).data; c.width = 0; return d;
+  }
+  function meanDiff(a, b) { if (a.length !== b.length) return Infinity; var s = 0, n = 0; for (var i = 0; i < a.length; i += 4) { s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); n += 3; } return s / n; }
+  var file = await demoFile(0), main = null, wrk = null, stallMain = null, stallWorker = null;
+  try {
+    var stop = watch(); main = await tileScene(file, 0, 1, 2048, 'selftest'); stallMain = stop();
+    check('workers + OffscreenCanvas are supported here', workerSupported(), 'if this fails the editor uses the main-thread path');
+    if (workerSupported()) { stop = watch(); wrk = await tileSceneWorker(file, 0, 1, 2048, 'selftest'); stallWorker = stop(); }
+  } catch (e) { check('tiling ran without an error', false, (e && e.message) || e); }
+  setProgress('');
+  if (main && wrk) {
+    var mk1 = Array.from(main.tiles.keys()).sort(), mk2 = Array.from(wrk.tiles.keys()).sort();
+    check('same scene id', main.id === wrk.id, main.id + ' vs ' + wrk.id);
+    check('same face size and levels', main.faceSize === wrk.faceSize && JSON.stringify(main.levels) === JSON.stringify(wrk.levels), main.faceSize + ' vs ' + wrk.faceSize);
+    check('same set of tile keys', JSON.stringify(mk1) === JSON.stringify(mk2), mk1.length + ' vs ' + mk2.length);
+    check('same file count', main.files === wrk.files, main.files + ' vs ' + wrk.files);
+    var allJpeg = true;
+    for (var pair of wrk.tiles) { var head = new Uint8Array(await pair[1].slice(0, 3).arrayBuffer()); if (head[0] !== 0xFF || head[1] !== 0xD8 || head[2] !== 0xFF) allJpeg = false; }
+    check('every worker tile is a JPEG', allJpeg);
+    var step = Math.max(1, Math.ceil(mk1.length / 8)), sample = mk1.filter(function (k, i) { return i % step === 0; });
+    if (sample.indexOf(wrk.id + '/preview.jpg') < 0) sample.push(wrk.id + '/preview.jpg');
+    var worst = 0;
+    for (var i = 0; i < sample.length; i++) worst = Math.max(worst, meanDiff(await pixels(main.tiles.get(sample[i])), await pixels(wrk.tiles.get(sample[i]))));
+    check('sampled tiles decode to the same pixels (mean diff <= 2/255)', worst <= 2, 'worst ' + worst.toFixed(2) + ' over ' + sample.length + ' tiles');
+    check('page stays responsive during worker tiling (longest stall < 250 ms)', stallWorker < 250, 'longest stall: worker ' + stallWorker + ' ms, main-thread path ' + stallMain + ' ms');
+  }
+  var failed = out.filter(function (r) { return !r.pass; }).length;
+  console.table(out);
+  console.log('G360 tile self-test: ' + (failed ? failed + ' FAILED' : 'all ' + out.length + ' passed'));
+  return { passed: out.length - failed, failed: failed, results: out };
+};
+
 async function addFiles(files) {
   if (state.busy || !files.length) return;
   if (!ensureViewer()) return;
@@ -357,7 +467,7 @@ async function addFiles(files) {
   var cap = 2048, added = 0;
   try {
     for (var i = 0; i < files.length; i++) {
-      var s = await tileScene(files[i], i, files.length, cap, state.nextId++);
+      var s = await tileSceneAuto(files[i], i, files.length, cap, state.nextId++); // PIECE5
       state.scenes.push(s); buildMz(s); added++; persistNewScene(s);
       if (state.cur < 0) showScene(state.scenes.length - 1, true); else { renderScenes(); syncPublish(); }
     }

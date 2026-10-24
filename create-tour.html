@@ -155,6 +155,281 @@ input[type=text]:focus,select:focus,textarea:focus{outline:2px solid rgba(165,11
 </style>
 </head>
 <body>
+<script type="text/plain" id="g360-worker-src">
+/* ===== core.js : pure functions (no DOM) — tested in Node against Marzipano's own geometry ===== */
+var G360 = (function () {
+  var FACE_ROT = {
+    f: { x: 0, y: 0 }, b: { x: 0, y: Math.PI }, l: { x: 0, y: Math.PI / 2 },
+    r: { x: 0, y: -Math.PI / 2 }, u: { x: Math.PI / 2, y: 0 }, d: { x: -Math.PI / 2, y: 0 }
+  };
+  var FACES = ['f', 'b', 'l', 'r', 'u', 'd'];
+  // Preview strip order. Matches Marzipano ImageUrlSource default ('bdflru').
+  var PREVIEW_ORDER = 'bdflru';
+
+  // World direction for point (a,b) on a face; a = right (-.5...5), b = up (-.5...5).
+  // Mirrors Marzipano CubeTile.vertices(): (a,b,-0.5) rotated X then Y (gl-matrix conventions).
+  function faceDir(face, a, b, out) {
+    var r = FACE_ROT[face], cx = Math.cos(r.x), sx = Math.sin(r.x), cy = Math.cos(r.y), sy = Math.sin(r.y);
+    var x = a, y = b, z = -0.5;
+    var y1 = y * cx - z * sx, z1 = y * sx + z * cx;           // rotateX
+    var x2 = z1 * sy + x * cy, z2 = z1 * cy - x * sy;         // rotateY
+    out[0] = x2; out[1] = y1; out[2] = z2;
+    return out;
+  }
+
+  // Equirect lookup coordinates (0..1) for a world direction.
+  // Image centre = yaw 0 (front), right = +yaw, top = up.
+  function dirToUV(x, y, z, out) {
+    var len = Math.sqrt(x * x + y * y + z * z);
+    var yaw = Math.atan2(x, -z);
+    var lat = Math.asin(y / len);
+    out[0] = 0.5 + yaw / (2 * Math.PI);
+    out[1] = 0.5 - lat / Math.PI;
+    return out;
+  }
+
+  // Marzipano view angles for a world direction (pitch: positive = DOWN in Marzipano).
+  function dirToYawPitch(x, y, z) {
+    var len = Math.sqrt(x * x + y * y + z * z);
+    return { yaw: Math.atan2(x, -z), pitch: -Math.asin(y / len) };
+  }
+
+  // Bilinear sample (RGBA) from equirect pixel array; wraps horizontally, clamps vertically.
+  function sample(src, W, H, u, v, out) {
+    var fx = u * W - 0.5, fy = v * H - 0.5;
+    var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    var y1 = y0 + 1; if (y0 < 0) y0 = 0; if (y1 < 0) y1 = 0; if (y0 > H - 1) y0 = H - 1; if (y1 > H - 1) y1 = H - 1;
+    var xa = ((x0 % W) + W) % W, xb = (((x0 + 1) % W) + W) % W;
+    var i00 = (y0 * W + xa) * 4, i10 = (y0 * W + xb) * 4, i01 = (y1 * W + xa) * 4, i11 = (y1 * W + xb) * 4;
+    for (var c = 0; c < 3; c++) {
+      var top = src[i00 + c] * (1 - tx) + src[i10 + c] * tx;
+      var bot = src[i01 + c] * (1 - tx) + src[i11 + c] * tx;
+      out[c] = top * (1 - ty) + bot * ty;
+    }
+  }
+
+  // Fill rows [r0, r1) of an F×F face into `dst` (RGBA Uint8ClampedArray, F*F*4).
+  function renderFaceRows(src, W, H, face, F, r0, r1, dst) {
+    var d = [0, 0, 0], uv = [0, 0], px = [0, 0, 0];
+    for (var py = r0; py < r1; py++) {
+      var b = 0.5 - (py + 0.5) / F;
+      for (var pxi = 0; pxi < F; pxi++) {
+        var a = (pxi + 0.5) / F - 0.5;
+        faceDir(face, a, b, d);
+        dirToUV(d[0], d[1], d[2], uv);
+        sample(src, W, H, uv[0], uv[1], px);
+        var o = (py * F + pxi) * 4;
+        dst[o] = px[0]; dst[o + 1] = px[1]; dst[o + 2] = px[2]; dst[o + 3] = 255;
+      }
+    }
+  }
+
+  // Same level list shape the Marzipano Tool exports.
+  function buildLevels(faceSize) {
+    var levels = [{ tileSize: 256, size: 256, fallbackOnly: true }];
+    for (var s = 512; s <= faceSize; s *= 2) levels.push({ tileSize: 512, size: s });
+    return levels;
+  }
+
+  // Largest power of two <= min(cap, srcWidth/4), min 512.
+  function pickFaceSize(srcWidth, cap) {
+    var target = Math.min(cap, Math.floor(srcWidth / 4)), s = 512;
+    while (s * 2 <= target) s *= 2;
+    return s;
+  }
+
+  // Aspect-aware vertical FOV: keep a minimum horizontal FOV on tall (portrait) screens.
+  // Marzipano's `fov` is the VERTICAL fov, so a fixed value gives a narrow slice in portrait.
+  function aspectFov(width, height, baseVfov, minHfov, maxVfov) {
+    var aspect = width / height;
+    var hfov = 2 * Math.atan(Math.tan(baseVfov / 2) * aspect);
+    if (hfov >= minHfov) return baseVfov;
+    var v = 2 * Math.atan(Math.tan(minHfov / 2) / aspect);
+    return Math.min(v, maxVfov);
+  }
+
+  // Live engine path: <slug>/app-files/<sceneId>/<z>/<f>/<y>/<x>.jpg  (no 'tiles/' folder)
+  function tileKey(sceneId, z, f, y, x) { return sceneId + '/' + z + '/' + f + '/' + y + '/' + x + '.jpg'; }
+
+  // Escape for HTML text / attribute contexts.
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // Serialise data.js safely: JSON, with characters that can break out of <script> escaped.
+  function serializeData(data) {
+    var json = JSON.stringify(data, null, 2)
+      .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
+      .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+    return 'window.APP_DATA = ' + json + ';\n';
+  }
+
+
+  // Listing link: optional. Accepts "trademe.co.nz/x" (adds https://), rejects javascript:, data:, credentials, spaces.
+  function normalizeListingUrl(input) {
+    var s = String(input == null ? '' : input).trim();
+    if (!s) return { ok: true, value: '' };
+    if (s.length > 500) return { ok: false, error: 'That link is too long.' };
+    if (/\s/.test(s)) return { ok: false, error: 'The link contains spaces. Paste it again from the listing page.' };
+    if (!/^[a-z][a-z0-9+.\-]*:/i.test(s)) s = 'https://' + s.replace(/^\/+/, '');
+    var u;
+    try { u = new URL(s); } catch (e) { return { ok: false, error: 'That does not look like a valid link.' }; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, error: 'The link must start with https:// or http://' };
+    if (u.username || u.password) return { ok: false, error: 'The link must not contain a username or password.' };
+    if (u.hostname.indexOf('.') < 1) return { ok: false, error: 'That does not look like a valid website address.' };
+    return { ok: true, value: u.href };
+  }
+
+  // Property address = tour title. Plain text, 5-120 chars.
+  function validateAddress(input) {
+    var v = String(input == null ? '' : input).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!v) return { ok: false, error: 'Enter the property address.' };
+    if (v.length < 5) return { ok: false, error: 'That address looks too short.' };
+    if (v.length > 120) return { ok: false, error: 'Please keep the address under 120 characters.' };
+    if (!/[a-z]/i.test(v)) return { ok: false, error: 'The address should include a street name.' };
+    return { ok: true, value: v, warn: /\d/.test(v) ? '' : 'Tip: include the street number.' };
+  }
+
+  // Camera filenames (IMG_20260915_165304_00_merged) make poor scene names.
+  function defaultSceneName(fileName, n) {
+    var base = String(fileName || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+    if (!base || /\d{6,}/.test(base) || /merged|stitched/i.test(base)) return 'Scene ' + n;
+    return base.slice(0, 60);
+  }
+
+  // Pricing: $10 + GST per scene (image). 1 to 15 scenes. Amounts are integer cents; NZ GST 15% (confirm with accountant).
+  var PRICING = { perSceneCents: 1000, gstRate: 0.15, minScenes: 1, maxScenes: 15, currency: 'NZD' };
+  function priceFor(n) {
+    n = Math.floor(Number(n));
+    var subtotal = n * PRICING.perSceneCents, gst = Math.round(subtotal * PRICING.gstRate);
+    return { scenes: n, unit: PRICING.perSceneCents, subtotal: subtotal, gst: gst, total: subtotal + gst };
+  }
+  function validateSceneCount(n) {
+    n = Number(n);
+    if (!isFinite(n) || n < PRICING.minScenes) return { ok: false, error: 'Add at least ' + PRICING.minScenes + ' scene.' };
+    if (n > PRICING.maxScenes) return { ok: false, error: 'A tour can have at most ' + PRICING.maxScenes + ' scenes.' };
+    return { ok: true };
+  }
+  function fmtMoney(cents) { return '$' + (cents / 100).toFixed(cents % 100 ? 2 : 0); }
+
+  function slugify(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '') || 'scene';
+  }
+
+  return { FACES: FACES, FACE_ROT: FACE_ROT, PREVIEW_ORDER: PREVIEW_ORDER, faceDir: faceDir, dirToUV: dirToUV,
+    dirToYawPitch: dirToYawPitch, sample: sample, renderFaceRows: renderFaceRows, buildLevels: buildLevels,
+    pickFaceSize: pickFaceSize, aspectFov: aspectFov, tileKey: tileKey, PRICING: PRICING, priceFor: priceFor, validateSceneCount: validateSceneCount, fmtMoney: fmtMoney, normalizeListingUrl: normalizeListingUrl, validateAddress: validateAddress, defaultSceneName: defaultSceneName, esc: esc, serializeData: serializeData, slugify: slugify };
+})();
+
+
+/* ===== worker.js : runs INSIDE the tiling Web Worker (piece 5). =====
+ * build.js embeds core.js + this file in the page (#g360-worker-src) and app.js starts them as a Worker
+ * from an inline Blob, so create-tour.html stays one file. core.js comes first, so G360 is defined here.
+ *
+ * This mirrors tileScene() in app.js step for step, using OffscreenCanvas instead of DOM canvases, so
+ * decoding, the six cube faces, the downscale ladder and the JPEG encodes never block the page.
+ * It posts back plain data only (blobs + numbers). The page turns that into a scene with
+ * sceneFromRecord(), the same function a restored draft goes through.
+ *
+ * Messages in : { type: 'tile', file, cap, uid, label }
+ * Messages out: { type: 'progress', text, frac } ... then { type: 'done', result } or
+ *               { type: 'error', kind, message }
+ *   kind 'user'        -> the photo itself is unusable (wrong shape / too small): show the message
+ *   kind 'unsupported' -> this browser's worker lacks OffscreenCanvas: page falls back to the main thread
+ *   kind 'failed'      -> anything else: page retries this one scene on the main thread
+ */
+var G = G360;
+
+function post(m) { self.postMessage(m); }
+function fail(kind, msg) { var e = new Error(msg); e.kind = kind; return e; }
+function mk(w, h) { return new OffscreenCanvas(w, h); }
+function toJpeg(c, q) { return c.convertToBlob({ type: 'image/jpeg', quality: q }); }
+
+async function tileOne(file, cap, uid, label) {
+  var bmp = await createImageBitmap(file);
+  var origW = bmp.width, origH = bmp.height, ratio = origW / origH;
+  if (Math.abs(ratio - 2) > 0.03) {
+    bmp.close();
+    throw fail('user', '"' + (file.name || 'image') + '" is ' + origW + '×' + origH + '. Needs a 2:1 equirectangular panorama.');
+  }
+  if (origW < 2048) {
+    bmp.close();
+    throw fail('user', 'Image is too small (' + origW + ' px wide). Use at least 2048 px.');
+  }
+  var F = G.pickFaceSize(origW, cap);
+  var W = Math.min(origW, 4 * F), H = Math.round(W / 2);
+  post({ type: 'progress', text: label + 'reading image…', frac: 0 });
+  var sc = mk(W, H), sctx = sc.getContext('2d', { willReadFrequently: true });
+  sctx.imageSmoothingQuality = 'high';
+  sctx.drawImage(bmp, 0, 0, W, H);
+  bmp.close();
+  var src = sctx.getImageData(0, 0, W, H).data;
+  var thumb = mk(192, 96);
+  thumb.getContext('2d').drawImage(sc, 0, 0, 192, 96);
+  sc.width = 0;
+  var thumbBlob = await toJpeg(thumb, 0.8);
+  thumb.width = 0;
+
+  var levels = G.buildLevels(F), sizes = levels.map(function (l) { return l.size; });
+  var id = uid + '-' + G.slugify((file.name || 'scene').replace(/\.[^.]+$/, ''));
+  var tiles = new Map(), fallbackCanvases = {}, bytes = 0, files = 0, CH = 48;
+
+  for (var fi = 0; fi < G.FACES.length; fi++) {
+    var face = G.FACES[fi];
+    var fc = mk(F, F), fctx = fc.getContext('2d'), img = fctx.createImageData(F, F);
+    for (var r = 0; r < F; r += CH) {
+      G.renderFaceRows(src, W, H, face, F, r, Math.min(F, r + CH), img.data);
+      post({ type: 'progress', text: label + 'face ' + (fi + 1) + '/6', frac: (fi + r / F) / 6 * 0.85 });
+    }
+    fctx.putImageData(img, 0, 0);
+    // downscale ladder (halving keeps quality)
+    var ladder = {}; ladder[F] = fc; var prev = fc;
+    for (var s = F / 2; s >= 256; s /= 2) {
+      var c2 = mk(s, s), x2 = c2.getContext('2d');
+      x2.imageSmoothingQuality = 'high';
+      x2.drawImage(prev, 0, 0, s, s);
+      ladder[s] = c2; prev = c2;
+    }
+    fallbackCanvases[face] = ladder[256];
+    for (var z = 1; z < levels.length; z++) {
+      var size = sizes[z], n = size / 512, lc = ladder[size];
+      for (var ty = 0; ty < n; ty++) for (var tx = 0; tx < n; tx++) {
+        var tc = mk(512, 512);
+        tc.getContext('2d').drawImage(lc, tx * 512, ty * 512, 512, 512, 0, 0, 512, 512);
+        var blob = await toJpeg(tc, 0.85);
+        tc.width = 0;
+        tiles.set(G.tileKey(id, z, face, ty, tx), blob); bytes += blob.size; files++;
+      }
+    }
+    Object.keys(ladder).forEach(function (k) { if (ladder[k] !== ladder[256]) ladder[k].width = 0; });
+  }
+  post({ type: 'progress', text: label + 'building preview…', frac: 0.92 });
+  var pc = mk(256, 256 * 6), pctx = pc.getContext('2d');
+  for (var i = 0; i < 6; i++) pctx.drawImage(fallbackCanvases[G.PREVIEW_ORDER[i]], 0, i * 256);
+  var previewBlob = await toJpeg(pc, 0.85);
+  pc.width = 0;
+  tiles.set(id + '/preview.jpg', previewBlob); bytes += previewBlob.size; files++;
+
+  return { id: id, thumbBlob: thumbBlob, faceSize: F, srcWidth: origW, capped: F < cap, levels: levels, tiles: tiles, bytes: bytes, files: files };
+}
+
+self.onmessage = async function (ev) {
+  var m = ev.data;
+  if (!m || m.type !== 'tile') return;
+  try {
+    if (typeof OffscreenCanvas === 'undefined' || typeof OffscreenCanvas.prototype.convertToBlob !== 'function' || typeof createImageBitmap !== 'function') {
+      throw fail('unsupported', 'OffscreenCanvas is not available in workers in this browser');
+    }
+    var result = await tileOne(m.file, m.cap, m.uid, m.label || '');
+    post({ type: 'done', result: result });
+  } catch (e) {
+    post({ type: 'error', kind: (e && e.kind) || 'failed', message: (e && e.message) || String(e) });
+  }
+};
+
+</script>
 <div id="app">
   <header>
     <h1>Glow360</h1><span class="tag">Tour builder · prototype</span><span class="sp"></span>
@@ -1228,6 +1503,116 @@ async function tileScene(file, idx, total, cap, uid) {
     start: { yaw: 0, pitch: 0, fov: MAX_VFOV }, links: [], infos: [], mz: null };
 }
 
+/* ---------- tiling worker (PIECE5) ---------- */
+// The heavy work (decode, six cube faces, downscale ladder, JPEG encodes) runs in a Web Worker built from an
+// inline Blob (build.js embeds core.js + worker.js in #g360-worker-src), so the page never freezes. The worker
+// returns plain data (blobs + numbers) and the scene is built by sceneFromRecord(), the same path a restored
+// draft uses. If workers or OffscreenCanvas are missing or fail, tileScene() above does the job on the main
+// thread exactly as before.
+//   error kind 'user'        -> the photo is unusable (wrong shape / too small): show it, don't retry
+//   error kind 'unsupported' -> worker can't do this here: stop using it for the session, use the main thread
+//   error kind 'broken'      -> worker failed to start or crashed: same as unsupported
+//   error kind 'failed'      -> anything else: retry THIS scene on the main thread, keep the worker for the next
+var tileWorker = null, workerOk = null;
+function workerSupported() {
+  if (workerOk === null) {
+    workerOk = typeof Worker !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined' &&
+      typeof URL.createObjectURL === 'function' && typeof OffscreenCanvas !== 'undefined' &&
+      typeof OffscreenCanvas.prototype.convertToBlob === 'function' && !!$('g360-worker-src');
+  }
+  return workerOk;
+}
+function getTileWorker() {
+  if (tileWorker) return tileWorker;
+  var url = URL.createObjectURL(new Blob([$('g360-worker-src').textContent], { type: 'text/javascript' }));
+  tileWorker = new Worker(url);
+  return tileWorker;
+}
+function retireTileWorker() { if (tileWorker) { try { tileWorker.terminate(); } catch (e) {} tileWorker = null; } }
+function tileError(kind, message) { var e = new Error(message); e.kind = kind; return e; }
+
+function tileSceneWorker(file, idx, total, cap, uid) {
+  return new Promise(function (resolve, reject) {
+    var w;
+    try { w = getTileWorker(); } catch (e) { return reject(tileError('broken', (e && e.message) || 'the tiling worker could not start')); }
+    var label = 'Scene ' + (idx + 1) + '/' + total + ': ';
+    function detach() { w.onmessage = null; w.onerror = null; w.onmessageerror = null; }
+    w.onmessage = function (ev) {
+      var m = ev.data || {};
+      if (m.type === 'progress') { setProgress(m.text, m.frac); return; }
+      detach();
+      if (m.type === 'error') { if (m.kind === 'unsupported') retireTileWorker(); reject(tileError(m.kind || 'failed', m.message)); return; }
+      if (m.type !== 'done' || !m.result) { retireTileWorker(); reject(tileError('broken', 'unexpected reply from the tiling worker')); return; }
+      var r = m.result, blobs = r.tiles;
+      blobs.set(D.thumbKey(r.id), r.thumbBlob);
+      sceneFromRecord({
+        id: r.id, name: G.defaultSceneName(file.name, state.scenes.length + 1), faceSize: r.faceSize, srcWidth: r.srcWidth,
+        capped: r.capped, levels: r.levels, bytes: r.bytes, files: r.files,
+        start: { yaw: 0, pitch: 0, fov: MAX_VFOV }, links: [], infos: [], blobs: blobs
+      }).then(resolve, function (e) { reject(tileError('failed', (e && e.message) || String(e))); });
+    };
+    w.onerror = function (ev) { detach(); retireTileWorker(); reject(tileError('broken', (ev && ev.message) || 'the tiling worker crashed')); };
+    w.onmessageerror = function () { detach(); retireTileWorker(); reject(tileError('broken', 'the tiling worker sent data that could not be read')); };
+    w.postMessage({ type: 'tile', file: file, cap: cap, uid: uid, label: label });
+  });
+}
+
+async function tileSceneAuto(file, idx, total, cap, uid) {
+  if (workerSupported()) {
+    try { return await tileSceneWorker(file, idx, total, cap, uid); }
+    catch (e) {
+      if (e && e.kind === 'user') throw e;
+      if (e && (e.kind === 'unsupported' || e.kind === 'broken')) { workerOk = false; retireTileWorker(); }
+      console.warn('Tiling worker failed (' + ((e && e.kind) || 'unknown') + '): ' + ((e && e.message) || e) + ' Using the main thread for this scene.');
+    }
+  }
+  return tileScene(file, idx, total, cap, uid);
+}
+
+// Browser self-test: window.G360TileSelfTest() tiles the built-in demo panorama on the main thread AND in the
+// worker, then compares them. It never touches your draft (no scenes are added or saved).
+window.G360TileSelfTest = async function () {
+  var out = [];
+  function check(name, pass, detail) { out.push({ test: name, pass: !!pass, detail: detail === undefined ? '' : String(detail) }); }
+  function watch() {
+    var last = performance.now(), worst = 0, t = setInterval(function () { var n = performance.now(); worst = Math.max(worst, n - last - 20); last = n; }, 20);
+    return function () { clearInterval(t); return Math.max(0, Math.round(worst)); };
+  }
+  async function pixels(blob) {
+    var b = await createImageBitmap(blob), c = mkCanvas(b.width, b.height), x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(b, 0, 0); try { b.close(); } catch (e) {}
+    var d = x.getImageData(0, 0, c.width, c.height).data; c.width = 0; return d;
+  }
+  function meanDiff(a, b) { if (a.length !== b.length) return Infinity; var s = 0, n = 0; for (var i = 0; i < a.length; i += 4) { s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); n += 3; } return s / n; }
+  var file = await demoFile(0), main = null, wrk = null, stallMain = null, stallWorker = null;
+  try {
+    var stop = watch(); main = await tileScene(file, 0, 1, 2048, 'selftest'); stallMain = stop();
+    check('workers + OffscreenCanvas are supported here', workerSupported(), 'if this fails the editor uses the main-thread path');
+    if (workerSupported()) { stop = watch(); wrk = await tileSceneWorker(file, 0, 1, 2048, 'selftest'); stallWorker = stop(); }
+  } catch (e) { check('tiling ran without an error', false, (e && e.message) || e); }
+  setProgress('');
+  if (main && wrk) {
+    var mk1 = Array.from(main.tiles.keys()).sort(), mk2 = Array.from(wrk.tiles.keys()).sort();
+    check('same scene id', main.id === wrk.id, main.id + ' vs ' + wrk.id);
+    check('same face size and levels', main.faceSize === wrk.faceSize && JSON.stringify(main.levels) === JSON.stringify(wrk.levels), main.faceSize + ' vs ' + wrk.faceSize);
+    check('same set of tile keys', JSON.stringify(mk1) === JSON.stringify(mk2), mk1.length + ' vs ' + mk2.length);
+    check('same file count', main.files === wrk.files, main.files + ' vs ' + wrk.files);
+    var allJpeg = true;
+    for (var pair of wrk.tiles) { var head = new Uint8Array(await pair[1].slice(0, 3).arrayBuffer()); if (head[0] !== 0xFF || head[1] !== 0xD8 || head[2] !== 0xFF) allJpeg = false; }
+    check('every worker tile is a JPEG', allJpeg);
+    var step = Math.max(1, Math.ceil(mk1.length / 8)), sample = mk1.filter(function (k, i) { return i % step === 0; });
+    if (sample.indexOf(wrk.id + '/preview.jpg') < 0) sample.push(wrk.id + '/preview.jpg');
+    var worst = 0;
+    for (var i = 0; i < sample.length; i++) worst = Math.max(worst, meanDiff(await pixels(main.tiles.get(sample[i])), await pixels(wrk.tiles.get(sample[i]))));
+    check('sampled tiles decode to the same pixels (mean diff <= 2/255)', worst <= 2, 'worst ' + worst.toFixed(2) + ' over ' + sample.length + ' tiles');
+    check('page stays responsive during worker tiling (longest stall < 250 ms)', stallWorker < 250, 'longest stall: worker ' + stallWorker + ' ms, main-thread path ' + stallMain + ' ms');
+  }
+  var failed = out.filter(function (r) { return !r.pass; }).length;
+  console.table(out);
+  console.log('G360 tile self-test: ' + (failed ? failed + ' FAILED' : 'all ' + out.length + ' passed'));
+  return { passed: out.length - failed, failed: failed, results: out };
+};
+
 async function addFiles(files) {
   if (state.busy || !files.length) return;
   if (!ensureViewer()) return;
@@ -1236,7 +1621,7 @@ async function addFiles(files) {
   var cap = 2048, added = 0;
   try {
     for (var i = 0; i < files.length; i++) {
-      var s = await tileScene(files[i], i, files.length, cap, state.nextId++);
+      var s = await tileSceneAuto(files[i], i, files.length, cap, state.nextId++); // PIECE5
       state.scenes.push(s); buildMz(s); added++; persistNewScene(s);
       if (state.cur < 0) showScene(state.scenes.length - 1, true); else { renderScenes(); syncPublish(); }
     }
