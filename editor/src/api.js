@@ -10,6 +10,9 @@
 var G360Api = (function () {
   var SUPABASE_URL = 'https://ogkcbmcboryqphwnvgls.supabase.co';
   var FN = SUPABASE_URL + '/functions/v1';
+  // Where published tours are served. STAGING value; switch it together with SUPABASE_URL when this goes live
+  // (production: https://tours.glow360.co.nz). Must match the publish function's TOURS_DOMAIN. No trailing slash.
+  var TOURS_BASE = 'https://tours-staging.glow360.co.nz';
 
   // Local storage key for the resume token -- see Part 2 (IndexedDB draft persistence) for why
   // this ALSO needs to survive a full page reload / the Stripe return trip, not just live in
@@ -101,5 +104,5 @@ var G360Api = (function () {
     return { ok: true, body: json };
   }
 
-  return { createOrder: createOrder, requestUploadUrls: requestUploadUrls, uploadToR2: uploadToR2, finalize: finalize, pollOrder: pollOrder };
+  return { createOrder: createOrder, requestUploadUrls: requestUploadUrls, uploadToR2: uploadToR2, finalize: finalize, pollOrder: pollOrder, toursBase: TOURS_BASE };
 })();

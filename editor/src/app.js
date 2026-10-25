@@ -665,7 +665,7 @@ var publishing = false;
 var PUB = { pollMs: 2000, pollMaxMs: 180000, chunk: 100, parallel: 6, tries: 3, backoffMs: 800, minBytes: 100, maxBytes: 1048576, coverKey: '_og/preview.jpg' };
 var liveTokens = {}, uploadedKeys = {};
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-function liveLink(slug) { return 'https://tours.glow360.co.nz/' + slug + '/'; }
+function liveLink(slug) { return G360Api.toursBase + '/' + slug + '/'; }
 function pubErr(message, opts) { var e = new Error(message); opts = opts || {}; e.back = !!opts.back; e.retry = opts.retry !== false; return e; }
 function fieldText(fields) { return fields && typeof fields === 'object' ? ' ' + Object.keys(fields).map(function (k) { return fields[k]; }).join(' ') : ''; }
 function saveOrderMeta(draftId, patch) { return D.saveMeta(draftId, patch).then(function () { return true; }, function () { return false; }); }
@@ -965,7 +965,7 @@ function openPublish() {
     state.details.address = a.value; state.details.url = u.value; state.details.unlisted = pub.checked; state.details.rightsConfirmed = true; updateTitle();
     body.textContent = ''; $('modal-t').textContent = 'Review and publish';
     var k = document.createElement('div'); k.className = 'kv';
-    [['Name', nm.value], ['Email', em.value], ['Title', a.value], ['Description', 'A self guided tour of ' + a.value], ['Total', G.fmtMoney(G.priceFor(state.scenes.length).total) + ' incl. GST'], ['Tour link', 'tours.glow360.co.nz/client-###-' + G.slugify(a.value) + '/'], ['Listing link', u.value || 'None'], ['Visibility', state.details.unlisted ? 'Private link (not listed)' : 'Listed publicly'], ['Autorotate', 'On']].forEach(function (r) {
+    [['Name', nm.value], ['Email', em.value], ['Title', a.value], ['Description', 'A self guided tour of ' + a.value], ['Total', G.fmtMoney(G.priceFor(state.scenes.length).total) + ' incl. GST'], ['Tour link', G360Api.toursBase.replace(/^https?:\/\//, '') + '/client-###-' + G.slugify(a.value) + '/'], ['Listing link', u.value || 'None'], ['Visibility', state.details.unlisted ? 'Private link (not listed)' : 'Listed publicly'], ['Autorotate', 'On']].forEach(function (r) {
       var x = document.createElement('span'); x.textContent = r[0]; var y = document.createElement('b'); y.textContent = r[1]; y.style.wordBreak = 'break-word'; y.style.textAlign = 'right'; k.appendChild(x); k.appendChild(y);
     });
     body.appendChild(k);
