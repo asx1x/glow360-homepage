@@ -1615,6 +1615,7 @@ window.G360TileSelfTest = async function () {
 
 async function addFiles(files) {
   if (state.busy || !files.length) return;
+  if (state.orderLocked) { toast('Your order is already created for ' + state.scenes.length + ' scene(s), so scenes cannot be added now.'); return; }
   if (!ensureViewer()) return;
   if (state.scenes.length + files.length > LIMITS.scenes) { showErr('A tour can have at most ' + LIMITS.scenes + ' scenes (' + G.fmtMoney(G.priceFor(LIMITS.scenes).subtotal) + ' + GST).'); return; }
   showErr(''); state.busy = true; setBusy();
@@ -1726,6 +1727,7 @@ var dragged = false;
 
 function removeScene(i) {
   var s = state.scenes[i]; if (!s) return;
+  if (state.orderLocked) { toast('Scenes cannot be removed after your order is created.'); return; }
   if (state.sel) clearSel();
   state.scenes.splice(i, 1);
   state.scenes.forEach(function (o) { o.links = o.links.filter(function (l) { return l.target !== s.id; }); });
@@ -1768,7 +1770,7 @@ function syncPublish() {
 // Limits mirror the server (supabase/functions/_shared/limits.ts + ogImage.ts). The server is the
 // authority; these exist so the customer finds out now, not after paying. A hair of margin on the
 // aspect band so rounding after a resize can never land just outside what the server accepts.
-var COVER = { maxBytes: 3 * 1024 * 1024, minW: 800, minH: 420, maxW: 4000, maxH: 2100, minAspect: 4 / 3 + 0.01, maxAspect: 2.4 - 0.01 };
+var COVER = { maxBytes: 1000000 /* upload-urls caps every file at 1 MiB */, minW: 800, minH: 420, maxW: 2400, maxH: 2100, minAspect: 4 / 3 + 0.01, maxAspect: 2.4 - 0.01 };
 
 async function processCover(file) {
   if (!file || !/^image\//.test(file.type || '')) return { ok: false, error: 'Please choose an image file (JPEG, PNG or WebP).' };
@@ -1805,7 +1807,229 @@ var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // same shape the server's notifica
 function checkName(v) { v = clean(v, 100); return v ? { ok: true, value: v } : { ok: false, error: 'Please enter your name.' }; }
 function checkEmail(v) { v = String(v).trim(); return (v.length <= 254 && EMAIL_RE.test(v)) ? { ok: true, value: v } : { ok: false, error: 'Please enter a valid email address.' }; }
 
+/* ---------- publish flow (PIECE6) ---------- */
+// Create the order, upload every tile plus the cover image, finalize, then wait for publication.
+// Every step is safe to repeat: create-order is idempotent on the draft id, uploads overwrite the same keys,
+// finalize is idempotent. What must survive a reload (order id, slug, RESUME TOKEN, status) is saved into the
+// draft BEFORE anything else happens, because the server hands the token out only once.
+// Once an order exists the scene count is paid for and the file set is fixed, so adding/removing scenes and
+// editing name, email, address and link are locked (state.orderLocked). Scene names, order, hotspots, start
+// views, the visibility choice and the cover image can still change.
+var publishing = false;
+var PUB = { pollMs: 2000, pollMaxMs: 180000, chunk: 100, parallel: 6, tries: 3, backoffMs: 800, minBytes: 100, maxBytes: 1048576, coverKey: '_og/preview.jpg' };
+var liveTokens = {}, uploadedKeys = {};
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function liveLink(slug) { return 'https://tours.glow360.co.nz/' + slug + '/'; }
+function pubErr(message, opts) { var e = new Error(message); opts = opts || {}; e.back = !!opts.back; e.retry = opts.retry !== false; return e; }
+function fieldText(fields) { return fields && typeof fields === 'object' ? ' ' + Object.keys(fields).map(function (k) { return fields[k]; }).join(' ') : ''; }
+function saveOrderMeta(draftId, patch) { return D.saveMeta(draftId, patch).then(function () { return true; }, function () { return false; }); }
+
+window.addEventListener('beforeunload', function (e) { if (publishing) { e.preventDefault(); e.returnValue = ''; return ''; } });
+
+function pubView() {
+  var body = $('modal-b'); body.textContent = ''; $('modal-t').textContent = 'Publishing your tour';
+  $('modal-go').style.display = 'none';
+  var rows = [], list = document.createElement('div'); list.className = 'list';
+  ['Create your order', 'Upload your photos', 'Publish your tour'].forEach(function (name) {
+    var r = document.createElement('div'); r.style.cssText = 'display:flex;gap:10px;align-items:baseline';
+    var m = document.createElement('span'); m.style.cssText = 'width:16px;text-align:center;flex:0 0 auto'; m.textContent = '○';
+    var t = document.createElement('div'); t.style.cssText = 'flex:1;min-width:0';
+    var a = document.createElement('div'); a.style.fontWeight = '600'; a.textContent = name;
+    var d = document.createElement('div'); d.className = 'muted';
+    t.appendChild(a); t.appendChild(d); r.appendChild(m); r.appendChild(t); list.appendChild(r); rows.push({ m: m, d: d });
+  });
+  body.appendChild(list);
+  var bar = document.createElement('div'), fill = document.createElement('i'); bar.className = 'bar'; bar.style.display = 'none'; bar.appendChild(fill); body.appendChild(bar);
+  var warn = document.createElement('p'); warn.className = 'muted wn'; warn.style.display = 'none'; body.appendChild(warn);
+  var note = document.createElement('p'); note.className = 'muted'; note.style.display = 'none'; body.appendChild(note);
+  var err = document.createElement('p'); err.className = 'err'; err.style.display = 'none'; body.appendChild(err);
+  var acts = document.createElement('div'); acts.className = 'row'; body.appendChild(acts);
+  var ICON = { todo: ['○', ''], doing: ['…', ''], done: ['✓', 'ok'], fail: ['✕', 'no'] };
+  function setText(el, t) { el.textContent = t || ''; el.style.display = t ? 'block' : 'none'; }
+  return {
+    step: function (i, st, detail) { rows[i].m.textContent = ICON[st][0]; rows[i].m.className = ICON[st][1]; if (detail !== undefined) rows[i].d.textContent = detail; },
+    bar: function (f) { bar.style.display = f == null ? 'none' : 'block'; fill.style.width = Math.round(Math.max(0, Math.min(1, f || 0)) * 100) + '%'; },
+    warn: function (t) { setText(warn, t); },
+    note: function (t) { setText(note, t); },
+    error: function (t) { setText(err, t); },
+    actions: function (list2) {
+      acts.textContent = '';
+      list2.forEach(function (a) { var b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (a.primary ? ' pri' : ''); b.textContent = a.label; b.addEventListener('click', a.run); acts.appendChild(b); });
+    },
+    link: function (url) {
+      var p = document.createElement('p'), a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = url; a.style.cssText = 'color:var(--link);word-break:break-all';
+      p.appendChild(a); body.insertBefore(p, warn);
+    }
+  };
+}
+
+function finishPublished(ui, slug) {
+  ui.step(0, 'done'); ui.step(1, 'done'); ui.step(2, 'done', 'Your tour is published'); ui.bar(null); ui.error('');
+  $('modal-t').textContent = 'Your tour is live';
+  ui.link(liveLink(slug));
+  ui.note('It can take a minute or two for the page to appear while the site updates. We have also emailed you the link.');
+  ui.actions([{ label: 'Start a new tour', primary: true, run: startNewTour }]);
+}
+
+async function startNewTour() {
+  if (!confirm('Start a new tour? This clears the finished tour from this browser. The published tour stays live.')) return;
+  try { await persistIdle(); if (persist.id) await D.clearDraft(persist.id); } catch (e) { /* reload anyway */ }
+  location.reload();
+}
+
+async function requestUrls(orderId, token, chunk) {
+  var res = await G360Api.requestUploadUrls(orderId, token, chunk.map(function (it) { return { key: it.key, size: it.blob.size }; }));
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 404) throw pubErr('This browser could not prove access to your order. Check your email for the link we sent, or contact us and quote your order number.', { retry: false });
+    if (res.status === 409) throw pubErr('This order is not accepting uploads right now (' + res.error + '). Reload the page to see where it is up to.', { retry: false });
+    throw pubErr(res.error, {});
+  }
+  var map = new Map(); ((res.body && res.body.urls) || []).forEach(function (u) { map.set(u.key, u.url); });
+  chunk.forEach(function (it) { if (!map.has(it.key)) throw pubErr('The server did not return an upload address for ' + it.key + '.', {}); });
+  return map;
+}
+
+// One file: retry with backoff, asking for a FRESH address each retry (an expired signed address looks like a plain
+// network error to the browser, so we can't tell the two apart).
+async function putOne(it, url, orderId, token, onProg) {
+  var u = url;
+  for (var attempt = 1; attempt <= PUB.tries; attempt++) {
+    var r; try { r = await G360Api.uploadToR2(u, it.blob, onProg); } catch (e) { r = { ok: false }; }
+    if (r && r.ok) return true;
+    if (attempt < PUB.tries) {
+      await sleep(PUB.backoffMs * attempt);
+      try { var fresh = await requestUrls(orderId, token, [it]); u = fresh.get(it.key) || u; } catch (e) { /* keep the old address */ }
+    }
+  }
+  return false;
+}
+
+async function runPool(items, n, fn) {
+  var i = 0, lanes = [];
+  for (var k = 0; k < Math.min(n, items.length); k++) lanes.push((async function () { while (i < items.length) { var it = items[i++]; await fn(it); } })());
+  await Promise.all(lanes);
+}
+
+async function uploadAll(ui, orderId, token) {
+  var items = [];
+  state.scenes.forEach(function (s) { s.tiles.forEach(function (blob, key) { items.push({ key: key, blob: blob }); }); });
+  items.push({ key: PUB.coverKey, blob: state.cover });
+  var odd = items.filter(function (it) { return it.blob.size < PUB.minBytes || it.blob.size > PUB.maxBytes; })[0];
+  if (odd) {
+    if (odd.key === PUB.coverKey) throw pubErr('Your cover image is larger than the 1 MB limit. Please choose it again.', { back: true, retry: false });
+    throw pubErr('One of your photo tiles has an unexpected size (' + odd.key + '). Please contact us.', { retry: false });
+  }
+  var done = uploadedKeys[orderId] || (uploadedKeys[orderId] = {});
+  var total = 0, sent = 0, count = 0, inflight = {}, lastPaint = 0;
+  items.forEach(function (it) { total += it.blob.size; if (done[it.key]) { sent += it.blob.size; count++; } });
+  function paint(force) {
+    var now = Date.now(); if (!force && now - lastPaint < 120) return; lastPaint = now;
+    var part = 0; for (var k in inflight) part += inflight[k];
+    var frac = total ? Math.min(1, (sent + part) / total) : 1;
+    ui.bar(frac); ui.step(1, 'doing', 'Uploading ' + count + ' of ' + items.length + ' files (' + Math.floor(frac * 100) + '%)');
+  }
+  paint(true);
+  var todo = items.filter(function (it) { return !done[it.key]; });
+  for (var c = 0; c < todo.length; c += PUB.chunk) {
+    var chunk = todo.slice(c, c + PUB.chunk), urls = await requestUrls(orderId, token, chunk), failed = [];
+    await runPool(chunk, PUB.parallel, async function (it) {
+      var ok = await putOne(it, urls.get(it.key), orderId, token, function (f) { inflight[it.key] = f * it.blob.size; paint(false); });
+      delete inflight[it.key];
+      if (ok) { done[it.key] = true; sent += it.blob.size; count++; } else failed.push(it.key);
+      paint(false);
+    });
+    if (failed.length) throw pubErr(failed.length + ' of ' + items.length + ' files could not be uploaded (' + failed[0] + (failed.length > 1 ? ' and others' : '') + '). Check your connection and try again. Files already uploaded are kept.', {});
+  }
+  paint(true);
+}
+
+async function publishTour(ui) {
+  var d = state.details;
+  if (!state.scenes.length) throw pubErr('Add at least one scene first.', { back: true, retry: false });
+  if (!state.cover) throw pubErr('Please add a cover image.', { back: true, retry: false });
+  if (d.rightsConfirmed !== true) throw pubErr('Please confirm the ownership declaration.', { back: true, retry: false });
+  if (state.cover.size > PUB.maxBytes || state.cover.size < PUB.minBytes) throw pubErr('Your cover image is larger than the 1 MB limit. Please choose it again.', { back: true, retry: false });
+
+  // 1. the order
+  ui.step(0, 'doing', 'Saving your details…');
+  await persistIdle();
+  var draftId = persist.id, storageOk = true, meta = null;
+  if (!draftId) { try { draftId = persist.id = await D.startNew(); } catch (e) { draftId = crypto.randomUUID(); storageOk = false; } }
+  if (storageOk) { try { meta = await D.loadMeta(draftId); } catch (e) { storageOk = false; } }
+  var res = await G360Api.createOrder(draftId, { clientName: d.clientName, clientEmail: d.clientEmail, address: d.address, listingUrl: d.url, sceneCount: state.scenes.length });
+  if (!res.ok) throw pubErr(res.error + fieldText(res.fields), { back: !!res.fields, retry: !res.fields });
+  var b = res.body || {};
+  var token = b.resumeToken || (meta && meta.resumeToken) || liveTokens[b.orderId];
+  if (!token) throw pubErr('This order was started in another browser, or its saved key was lost, so it cannot be continued from here. Check your email for the link we sent, or contact us.', { retry: false });
+  liveTokens[b.orderId] = token;
+  state.orderLocked = true;
+  if (!(await saveOrderMeta(draftId, { orderId: b.orderId, slug: b.slug, resumeToken: token, orderStatus: b.status }))) storageOk = false;
+  if (!storageOk) ui.warn('This browser could not save your progress. Keep this tab open until publishing finishes.');
+  ui.step(0, 'done', 'Order ' + b.slug);
+
+  var status = b.status;
+  if (status === 'published') return finishPublished(ui, b.slug);
+  if (status === 'failed') throw pubErr('Publishing this order failed earlier. Your photos are safe and we have been notified, so you do not need to upload again.', { retry: false });
+  if (b.next === 'pay' || status === 'draft') {
+    ui.step(1, 'todo', 'Waiting for payment');
+    ui.note('Your order is saved. Payment is not switched on yet, so there is nothing more to do for now.');
+    return;
+  }
+  if (status !== 'paid' && status !== 'uploaded') throw pubErr('This order is in an unexpected state (' + status + ').', { retry: false });
+
+  // 2. the files, then 3. finalize
+  if (status === 'paid') {
+    await uploadAll(ui, b.orderId, token);
+    ui.step(1, 'done', 'All files uploaded'); ui.bar(null);
+    ui.step(2, 'doing', 'Checking your tour…');
+    var fin = await G360Api.finalize(b.orderId, token, buildAppData(), d.unlisted === true, true);
+    if (!fin.ok && fin.status !== 409) throw pubErr('We could not finish publishing: ' + fin.error, { back: /cover image/i.test(fin.error || ''), retry: true });
+    await saveOrderMeta(draftId, { orderStatus: 'uploaded' });
+  } else {
+    // PIECE6B: already 'uploaded' = every file is stored, but publishing may never have started (or crashed).
+    // finalize is idempotent for an uploaded order and simply starts publishing again, so ask it to.
+    ui.step(1, 'done', 'All files uploaded');
+    ui.step(2, 'doing', 'Restarting publishing…');
+    var again = await G360Api.finalize(b.orderId, token, buildAppData(), d.unlisted === true, true);
+    if (!again.ok && again.status !== 409) throw pubErr('We could not restart publishing: ' + again.error, { retry: true });
+  }
+
+  // 4. wait for it to go live
+  ui.step(2, 'doing', 'Publishing…');
+  var t0 = Date.now();
+  while (true) {
+    var p = await G360Api.pollOrder(b.orderId, token);
+    if (p.ok) {
+      if (p.body.status === 'published') { await saveOrderMeta(draftId, { orderStatus: 'published' }); return finishPublished(ui, p.body.slug || b.slug); }
+      if (p.body.status === 'failed') {
+        await saveOrderMeta(draftId, { orderStatus: 'failed' });
+        throw pubErr('Publishing stopped at the "' + (p.body.errorStep || 'unknown') + '" step. Your photos are safe and we have been notified, so you do not need to upload again.', { retry: false });
+      }
+    } else if (p.status === 401 || p.status === 404) {
+      throw pubErr('This browser could not prove access to your order any more. Check your email for the link we sent, or contact us.', { retry: false });
+    }
+    if (Date.now() - t0 > PUB.pollMaxMs) { ui.note('Still publishing. You can close this page: we will email you when your tour is live.'); return; }
+    await sleep(PUB.pollMs);
+  }
+}
+
+async function runPublish() {
+  if (publishing) return;
+  publishing = true;
+  var ui = pubView();
+  try { await publishTour(ui); }
+  catch (e) {
+    console.error('publish failed', e);
+    var acts = [];
+    if (e && e.back) acts.push({ label: 'Back to details', run: function () { publishing = false; openPublish(); } });
+    if (!e || e.retry !== false) acts.push({ label: 'Try again', primary: true, run: function () { publishing = false; runPublish(); } });
+    ui.error((e && e.message) || 'Something went wrong.');
+    ui.actions(acts);
+  } finally { publishing = false; }
+}
+
 function openPublish() {
+  if (publishing) { $('modal').style.display = 'flex'; return; }
   var body = $('modal-b'); body.textContent = ''; $('modal-t').textContent = 'Tour details';
   var coverUrl = null;
   function setCoverPreview(img) { if (coverUrl) { URL.revokeObjectURL(coverUrl); coverUrl = null; } if (state.cover) { coverUrl = URL.createObjectURL(state.cover); img.src = coverUrl; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display = 'none'; } }
@@ -1834,6 +2058,10 @@ function openPublish() {
   var addr = field('Property address (tour title)', 'd-addr', state.details.address, 'e.g. 12 Example Street, Remuera, Auckland', 'Shown at the top of your tour and in link previews.');
   var url = field('Listing link (optional)', 'd-url', state.details.url, 'https://www.trademe.co.nz/… or zillow.com/…', 'Adds an “Open Listing Page” button to your tour. Paste the link from your agent’s listing (Trade Me, Zillow, etc).');
   addr.maxLength = 120; url.maxLength = 500; url.setAttribute('inputmode', 'url');
+  if (state.orderLocked) {
+    [nameIn, emailIn, addr, url].forEach(function (i) { i.disabled = true; i.title = 'Fixed once your order is created'; });
+    var lockNote = document.createElement('p'); lockNote.className = 'muted wn'; lockNote.textContent = 'Your order has been created, so your name, email, address and listing link are now fixed. You can still change the cover image, the visibility choice and your hotspots.'; body.appendChild(lockNote);
+  }
 
   // cover image
   var cw = document.createElement('div'); cw.style.marginBottom = '14px';
@@ -1877,7 +2105,7 @@ function openPublish() {
     state.cover = r.blob; setCoverPreview(pv); pick.textContent = 'Change image'; rm.style.display = ''; persistCover(r.blob);
   });
 
-  var go = $('modal-go'); go.style.display = ''; go.textContent = 'Continue to payment';
+  var go = $('modal-go'); go.style.display = ''; go.textContent = 'Continue';
   go.onclick = function () {
     var nm = checkName(nameIn.value), em = checkEmail(emailIn.value);
     var a = G.validateAddress(addr.value), u = G.normalizeListingUrl(url.value);
@@ -1889,14 +2117,15 @@ function openPublish() {
     if (firstBad) { firstBad.focus(); return; }
     state.details.clientName = nm.value; state.details.clientEmail = em.value;
     state.details.address = a.value; state.details.url = u.value; state.details.unlisted = pub.checked; state.details.rightsConfirmed = true; updateTitle();
-    body.textContent = ''; $('modal-t').textContent = 'Details saved'; go.style.display = 'none';
+    body.textContent = ''; $('modal-t').textContent = 'Review and publish';
     var k = document.createElement('div'); k.className = 'kv';
     [['Name', nm.value], ['Email', em.value], ['Title', a.value], ['Description', 'A self guided tour of ' + a.value], ['Total', G.fmtMoney(G.priceFor(state.scenes.length).total) + ' incl. GST'], ['Tour link', 'tours.glow360.co.nz/client-###-' + G.slugify(a.value) + '/'], ['Listing link', u.value || 'None'], ['Visibility', state.details.unlisted ? 'Private link (not listed)' : 'Listed publicly'], ['Autorotate', 'On']].forEach(function (r) {
       var x = document.createElement('span'); x.textContent = r[0]; var y = document.createElement('b'); y.textContent = r[1]; y.style.wordBreak = 'break-word'; y.style.textAlign = 'right'; k.appendChild(x); k.appendChild(y);
     });
     body.appendChild(k);
-    var n = document.createElement('p'); n.className = 'muted'; n.textContent = 'Prototype: payment and publishing are the next build phase (Stripe checkout, secure upload, automatic publish). Nothing has been uploaded or charged.'; body.appendChild(n);
+    var n = document.createElement('p'); n.className = 'muted'; n.textContent = 'Publishing uploads your photos securely and makes your tour live. Large tours can take a few minutes, so keep this tab open until it finishes.'; body.appendChild(n);
     if (a.warn) { var w2 = document.createElement('p'); w2.className = 'muted wn'; w2.textContent = a.warn; body.appendChild(w2); }
+    go.style.display = ''; go.textContent = 'Publish tour'; go.onclick = function () { runPublish(); };
   };
   $('modal').style.display = 'flex'; setTimeout(function () { nameIn.focus(); }, 30);
 }
@@ -2054,6 +2283,7 @@ async function rebuildFrom(loaded) {
   state.details.unlisted = det.unlisted === true;             // listed unless the customer chose private
   state.details.rightsConfirmed = det.rightsConfirmed === true;
   state.cover = loaded.cover || null;
+  state.orderLocked = !!loaded.meta.orderId; // PIECE6
   updateTitle();
   if (!loaded.scenes.length) { persist.metaJson = JSON.stringify(metaSnap([])); return; }
   if (!ensureViewer()) return;
