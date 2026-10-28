@@ -1288,5 +1288,11 @@ $('modal-x').addEventListener('click', function () { $('modal').style.display = 
 window.addEventListener('beforeunload', function (e) { if (state.scenes.length && !paymentRedirect) { e.preventDefault(); e.returnValue = ''; } });
 
 renderScenes(); syncPublish(); lastPortrait = stageSize().w < stageSize().h;
+// Say which environment this is: loudly on staging (test payments only), and no 'prototype' wording on the real site.
+(function () {
+  var tag = document.querySelector('header .tag');
+  if (G360Api.environment === 'production') { if (tag) tag.style.display = 'none'; document.title = 'Glow360 Tour Builder'; }
+  else { if (tag) tag.textContent = 'STAGING · test payments only'; document.title = 'Glow360 Tour Builder (staging)'; }
+})();
 restoreDraft().then(handlePaymentReturn);
 })();

@@ -3,16 +3,25 @@
  * object ({ ok: true, ... } | { ok: false, error: string }) rather than throwing, so the UI layer
  * can render failures directly without a try/catch around every call site.
  *
- * SUPABASE_URL matches the project this whole backend was built and tested against
- * (ogkcbmcboryqphwnvgls, staging) -- swap to the production ref when this feature actually
- * launches; nothing else about this module changes between environments.
+ * Which backend this talks to is decided by the HOSTNAME the page is served from (see ENVIRONMENTS below), so the
+ * same build is correct everywhere and there is no launch-day constant to forget to change.
  */
 var G360Api = (function () {
-  var SUPABASE_URL = 'https://ogkcbmcboryqphwnvgls.supabase.co';
+  // Only the real site's hostnames use production. EVERYTHING else (localhost, staging.glow360.co.nz, a Vercel preview, a
+  // file:// page, a look-alike domain) uses STAGING, so a mistake can only ever point at staging, never at live customer data.
+  // toursBase must match the publish function's TOURS_DOMAIN for that environment. No trailing slashes.
+  var ENVIRONMENTS = {
+    production: { supabaseUrl: 'https://caaenhofcnxbhiskqrzk.supabase.co', toursBase: 'https://tours.glow360.co.nz' },
+    staging: { supabaseUrl: 'https://ogkcbmcboryqphwnvgls.supabase.co', toursBase: 'https://tours-staging.glow360.co.nz' }
+  };
+  var PRODUCTION_HOSTS = ['glow360.co.nz', 'www.glow360.co.nz'];
+  function pickEnvironment(hostname) {
+    return PRODUCTION_HOSTS.indexOf(String(hostname || '').toLowerCase()) >= 0 ? 'production' : 'staging';
+  }
+  var ENV_NAME = pickEnvironment(typeof location !== 'undefined' ? location.hostname : '');
+  var SUPABASE_URL = ENVIRONMENTS[ENV_NAME].supabaseUrl;
   var FN = SUPABASE_URL + '/functions/v1';
-  // Where published tours are served. STAGING value; switch it together with SUPABASE_URL when this goes live
-  // (production: https://tours.glow360.co.nz). Must match the publish function's TOURS_DOMAIN. No trailing slash.
-  var TOURS_BASE = 'https://tours-staging.glow360.co.nz';
+  var TOURS_BASE = ENVIRONMENTS[ENV_NAME].toursBase;
 
   // Local storage key for the resume token -- see Part 2 (IndexedDB draft persistence) for why
   // this ALSO needs to survive a full page reload / the Stripe return trip, not just live in
@@ -105,5 +114,5 @@ var G360Api = (function () {
     return { ok: true, body: json };
   }
 
-  return { createOrder: createOrder, requestUploadUrls: requestUploadUrls, uploadToR2: uploadToR2, finalize: finalize, pollOrder: pollOrder, toursBase: TOURS_BASE };
+  return { createOrder: createOrder, requestUploadUrls: requestUploadUrls, uploadToR2: uploadToR2, finalize: finalize, pollOrder: pollOrder, toursBase: TOURS_BASE, environment: ENV_NAME, pickEnvironment: pickEnvironment };
 })();
