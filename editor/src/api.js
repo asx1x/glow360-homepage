@@ -47,6 +47,7 @@ var G360Api = (function () {
       address: fields.address,
       listingUrl: fields.listingUrl || '',
       sceneCount: fields.sceneCount,
+      returnTo: fields.returnTo,
     });
     return res;
   }

@@ -662,15 +662,24 @@ function checkEmail(v) { v = String(v).trim(); return (v.length <= 254 && EMAIL_
 // editing name, email, address and link are locked (state.orderLocked). Scene names, order, hotspots, start
 // views, the visibility choice and the cover image can still change.
 var publishing = false;
-var PUB = { pollMs: 2000, pollMaxMs: 180000, chunk: 100, parallel: 6, tries: 3, backoffMs: 800, minBytes: 100, maxBytes: 1048576, coverKey: '_og/preview.jpg' };
+var PUB = { pollMs: 2000, pollMaxMs: 180000, payConfirmMaxMs: 120000, chunk: 100, parallel: 6, tries: 3, backoffMs: 800, minBytes: 100, maxBytes: 1048576, coverKey: '_og/preview.jpg' };
 var liveTokens = {}, uploadedKeys = {};
+var paymentRedirect = false, confirmingPayment = false; // PIECE7
+// Set when Stripe has just sent the customer back (?order=<id>, plus &cancelled=1 if they backed out). Read ONCE at load.
+var paymentReturn = (function () {
+  try {
+    var q = new URLSearchParams(location.search), id = q.get('order');
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+    return { orderId: id.toLowerCase(), cancelled: q.get('cancelled') === '1' };
+  } catch (e) { return null; }
+})();
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 function liveLink(slug) { return G360Api.toursBase + '/' + slug + '/'; }
 function pubErr(message, opts) { var e = new Error(message); opts = opts || {}; e.back = !!opts.back; e.retry = opts.retry !== false; return e; }
 function fieldText(fields) { return fields && typeof fields === 'object' ? ' ' + Object.keys(fields).map(function (k) { return fields[k]; }).join(' ') : ''; }
 function saveOrderMeta(draftId, patch) { return D.saveMeta(draftId, patch).then(function () { return true; }, function () { return false; }); }
 
-window.addEventListener('beforeunload', function (e) { if (publishing) { e.preventDefault(); e.returnValue = ''; return ''; } });
+window.addEventListener('beforeunload', function (e) { if (publishing && !paymentRedirect) { e.preventDefault(); e.returnValue = ''; return ''; } });
 
 function pubView() {
   var body = $('modal-b'); body.textContent = ''; $('modal-t').textContent = 'Publishing your tour';
@@ -802,7 +811,7 @@ async function publishTour(ui) {
   var draftId = persist.id, storageOk = true, meta = null;
   if (!draftId) { try { draftId = persist.id = await D.startNew(); } catch (e) { draftId = crypto.randomUUID(); storageOk = false; } }
   if (storageOk) { try { meta = await D.loadMeta(draftId); } catch (e) { storageOk = false; } }
-  var res = await G360Api.createOrder(draftId, { clientName: d.clientName, clientEmail: d.clientEmail, address: d.address, listingUrl: d.url, sceneCount: state.scenes.length });
+  var res = await G360Api.createOrder(draftId, { clientName: d.clientName, clientEmail: d.clientEmail, address: d.address, listingUrl: d.url, sceneCount: state.scenes.length, returnTo: location.origin + location.pathname });
   if (!res.ok) throw pubErr(res.error + fieldText(res.fields), { back: !!res.fields, retry: !res.fields });
   var b = res.body || {};
   var token = b.resumeToken || (meta && meta.resumeToken) || liveTokens[b.orderId];
@@ -816,7 +825,31 @@ async function publishTour(ui) {
   var status = b.status;
   if (status === 'published') return finishPublished(ui, b.slug);
   if (status === 'failed') throw pubErr('Publishing this order failed earlier. Your photos are safe and we have been notified, so you do not need to upload again.', { retry: false });
-  if (b.next === 'pay' || status === 'draft') {
+  if (status === 'draft' && confirmingPayment) {
+    // Just back from Stripe: the webhook usually marks the order paid within seconds. Wait for it; never send them back to pay.
+    ui.step(1, 'doing', 'Confirming your payment…');
+    var tPay = Date.now();
+    while (status === 'draft') {
+      var pp = await G360Api.pollOrder(b.orderId, token);
+      if (pp.ok && pp.body.status !== 'draft') { status = pp.body.status; break; }
+      if (Date.now() - tPay > PUB.payConfirmMaxMs) throw pubErr('We have not received confirmation of your payment yet. This can take a minute. Click Try again in a moment. If you were charged, your order is safe and will carry on.', {});
+      await sleep(PUB.pollMs);
+    }
+    confirmingPayment = false;
+    await saveOrderMeta(draftId, { orderStatus: status });
+    ui.step(1, 'done', 'Payment received');
+  }
+  if (status === 'draft') {
+    if (b.checkoutUrl) {
+      if (!/^https:\/\/checkout\.stripe\.com\//.test(b.checkoutUrl)) throw pubErr('The payment page address was not what we expected, so we have not sent you there. Please try again, or contact us.', { retry: false });
+      ui.step(1, 'doing', 'Taking you to the secure payment page…');
+      ui.note('You will pay on Stripe\u2019s secure page, then come straight back here. Your tour is saved.');
+      await persistIdle();
+      paymentRedirect = true; setTimeout(function () { paymentRedirect = false; }, 8000);
+      location.href = b.checkoutUrl;
+      return;
+    }
+    if (b.checkoutError) throw pubErr('We could not open the payment page (' + b.checkoutError + '). Please try again in a moment.', {});
     ui.step(1, 'todo', 'Waiting for payment');
     ui.note('Your order is saved. Payment is not switched on yet, so there is nothing more to do for now.');
     return;
@@ -857,6 +890,27 @@ async function publishTour(ui) {
     if (Date.now() - t0 > PUB.pollMaxMs) { ui.note('Still publishing. You can close this page: we will email you when your tour is live.'); return; }
     await sleep(PUB.pollMs);
   }
+}
+
+function showPaymentNotice(title, text) {
+  var body = $('modal-b'); body.textContent = ''; $('modal-t').textContent = title; $('modal-go').style.display = 'none';
+  var p = document.createElement('p'); p.textContent = text; body.appendChild(p); $('modal').style.display = 'flex';
+}
+
+async function handlePaymentReturn() {
+  var pr = paymentReturn; if (!pr) return;
+  paymentReturn = null; // handle it once
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* the address bar just keeps the query */ }
+  var meta = null; try { if (persist.id) meta = await D.loadMeta(persist.id); } catch (e) { meta = null; }
+  var mine = !!meta && meta.orderId === pr.orderId;
+  if (pr.cancelled) { if (mine) toast('Payment cancelled. Your tour is saved: click Publish whenever you are ready.'); return; }
+  if (!mine) {
+    showPaymentNotice('We could not find your tour in this browser', 'If you completed a payment, it has been received, but the tour you were building is stored in the browser where you started it. Please open the editor there, or contact info@glow360.co.nz and quote this order number: ' + pr.orderId);
+    return;
+  }
+  confirmingPayment = true;
+  $('modal').style.display = 'flex';
+  runPublish();
 }
 
 async function runPublish() {
@@ -1231,8 +1285,8 @@ window.addEventListener('resize', function () {
 
 $('publish').addEventListener('click', openPublish);
 $('modal-x').addEventListener('click', function () { $('modal').style.display = 'none'; });
-window.addEventListener('beforeunload', function (e) { if (state.scenes.length) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', function (e) { if (state.scenes.length && !paymentRedirect) { e.preventDefault(); e.returnValue = ''; } });
 
 renderScenes(); syncPublish(); lastPortrait = stageSize().w < stageSize().h;
-restoreDraft();
+restoreDraft().then(handlePaymentReturn);
 })();
